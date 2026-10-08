@@ -1,0 +1,7 @@
+import Dialog,{Close} from './Dialog';import Button from './Button';import {events,artistById} from '../data';import {useUI} from '../hooks/useUI';
+export default function EventPanel({id}:{id:string}){const {close,openArtist}=useUI(),e=events.find(x=>x.id===id);if(!e)return null;
+return <Dialog label={e.name} onClose={close}><div className="sheet ml-auto h-full w-full max-w-xl overflow-y-auto bg-raised p-6 pb-16 pt-24 md:p-12 md:pt-28"><Close onClose={close}/>
+<p className="font-display text-5xl font-extrabold text-violet">{e.date}</p><h2 className="mt-4 font-display text-4xl font-extrabold leading-[.95] tracking-[-.03em] md:text-5xl">{e.name}</h2>
+<p className="mt-3 text-bone/75">{e.venue}, {e.city}, {e.country}</p><p className="mt-6 max-w-md text-bone/75">{e.blurb}</p>
+<h3 className="mb-2 mt-10 text-sm text-bone/60">Line-up</h3><ul>{e.lineup.map(l=>{const a=artistById(l);return a&&<li key={l}><button onClick={()=>openArtist(l)} className="flex w-full items-baseline justify-between border-b border-bone/15 py-3 text-left transition hover:text-cyan"><span className="font-display text-xl">{a.name}</span><span className="text-sm text-bone/60">{a.genre}</span></button></li>})}</ul>
+<div className="mt-10">{e.ticketUrl?<Button href={e.ticketUrl} external>GET TICKETS</Button>:<p className="border border-bone/15 p-4 text-sm text-bone/75">Tickets are not on sale yet. Sales details will appear here once announced.</p>}</div></div></Dialog>}

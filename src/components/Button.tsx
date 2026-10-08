@@ -1,0 +1,7 @@
+import {useRef,ReactNode,PointerEvent} from 'react';import {fine,reduced} from '../hooks/motion';
+// Magnetic button: pull capped at 6px, fine mouse pointers only, off under reduced motion. Hover adds a soft accent glow and 2% scale.
+export default function Button({href,onClick,external,variant='solid',children}:{href?:string;onClick?:()=>void;external?:boolean;variant?:'solid'|'ghost';children:ReactNode}){
+const r=useRef<HTMLAnchorElement>(null),solid=variant==='solid',Tag=(href?'a':'button') as 'a';
+const mv=(e:PointerEvent)=>{if(reduced||!fine||e.pointerType!=='mouse')return;const b=r.current!.getBoundingClientRect();r.current!.style.translate=`${(e.clientX-b.left-b.width/2)/b.width*12}px ${(e.clientY-b.top-b.height/2)/b.height*12}px`};
+return <Tag ref={r} href={href} onClick={onClick} {...(href?(external?{target:'_blank',rel:'noopener noreferrer'}:{}):{type:'button' as string})} onPointerMove={mv} onPointerLeave={()=>{r.current!.style.translate=''}} className={`group relative inline-flex overflow-hidden rounded-full px-8 py-4 text-[13px] font-semibold tracking-[.2em] transition-[transform,translate,border-color,box-shadow] duration-500 ease-[cubic-bezier(.2,.7,.2,1)] hover:scale-[1.02] hover:shadow-[0_0_34px_-10px_rgb(var(--accent)/.9)] ${solid?'bg-bone text-ink':'border border-bone/25 hover:border-bone/70'}`}>
+<span aria-hidden className={`absolute inset-0 -translate-x-full transition-transform duration-500 ease-out group-hover:translate-x-0 ${solid?'bg-cyan':'bg-bone/10'}`}/><span className="relative">{children}</span></Tag>}

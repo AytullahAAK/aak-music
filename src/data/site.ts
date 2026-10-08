@@ -1,0 +1,3 @@
+// Brand + link config. Logo: public/images/aak-music-logo.png. Optional light-theme variant: set logoLight. Replace every https://example.com with the real URL.
+export const site={brand:{name:'AAK Music',logo:'/images/aak-music-logo.png',logoLight:'' as string,tagline:'Original electronic music from AAK Music.'},contact:'mailto:hello@example.com',newsletterUrl:'' as string,
+socials:[{name:'YouTube',url:'https://example.com'},{name:'Spotify',url:'https://example.com'},{name:'SoundCloud',url:'https://example.com'},{name:'Instagram',url:'https://example.com'},{name:'TikTok',url:'https://example.com'},{name:'Facebook',url:'https://example.com'}]};

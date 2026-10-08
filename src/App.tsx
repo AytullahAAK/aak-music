@@ -1,0 +1,7 @@
+import {ThemeProvider} from './hooks/useTheme';import {PlayerProvider} from './hooks/usePlayer';import {UIProvider} from './hooks/useUI';import {usePointerTracking} from './hooks/motion';
+import AudioVisualizerBackground from './components/AudioVisualizerBackground';import CursorGlow from './components/CursorGlow';import CustomCursor from './components/CustomCursor';
+import Navbar from './components/Navbar';import MiniPlayer from './components/MiniPlayer';import Overlays from './components/Overlays';
+import Hero from './sections/Hero';import Featured from './sections/Featured';import Releases from './sections/Releases';import Artists from './sections/Artists';import Worlds from './sections/Worlds';
+import Immersive from './sections/Immersive';import Events from './sections/Events';import About from './sections/About';import Stories from './sections/Stories';import Footer from './sections/Footer';
+export default function App(){usePointerTracking();return <ThemeProvider><PlayerProvider><UIProvider><AudioVisualizerBackground/><CursorGlow/><CustomCursor/><a href="#top" className="sr-only z-[100] bg-bone px-4 py-2 text-ink focus:not-sr-only focus:fixed focus:left-4 focus:top-4">Skip to content</a>
+<Navbar/><main id="top" tabIndex={-1}><Hero/><Featured/><Releases/><Artists/><Worlds/><Immersive/><Events/><About/><Stories/></main><Footer/><MiniPlayer/><Overlays/></UIProvider></PlayerProvider></ThemeProvider>}

@@ -1,0 +1,13 @@
+import InteractiveParticles from '../components/InteractiveParticles';import AmbientWave from '../components/AmbientWave';import {usePointerShift} from '../hooks/usePointerShift';import Button from '../components/Button';import {useParallax} from '../hooks/useParallax';
+const wave=Array.from({length:241},(_,i)=>`${i?'L':'M'}${i*10} ${50+Math.sin(i*.5)*Math.sin(i*.07)*30}`).join('');
+export default function Hero(){const bg=useParallax<HTMLDivElement>(-.25),tt=usePointerShift<HTMLHeadingElement>(3);
+return <section className="relative flex min-h-[100svh] items-end overflow-hidden px-6 pb-24 md:px-12 md:pb-28">
+<div ref={bg} aria-hidden className="absolute -inset-x-0 -top-[10%] h-[120%]"><div className="drift absolute inset-0" style={{backgroundSize:'160% 160%',backgroundImage:'radial-gradient(70% 60% at 72% 28%,rgb(var(--accent) / var(--glow-a)),transparent 65%),radial-gradient(50% 50% at 12% 85%,rgb(var(--accent2) / calc(var(--glow-a) * .4)),transparent 70%)'}}/>
+<div className="sway absolute -inset-[30%]" style={{backgroundImage:'repeating-conic-gradient(from 172deg at 72% 108%,rgb(var(--accent) / var(--beam-a)) 0 1deg,transparent 1deg 6.5deg)',WebkitMaskImage:'linear-gradient(to top,#000 5%,transparent 70%)',maskImage:'linear-gradient(to top,#000 5%,transparent 70%)'}}/></div>
+<div aria-hidden className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-ink/60 via-ink/20 to-transparent"/>
+<InteractiveParticles/><AmbientWave className="bottom-[24%]"/>
+<svg aria-hidden viewBox="0 0 2400 100" preserveAspectRatio="none" className="absolute inset-x-0 bottom-[30%] h-24 w-full opacity-60"><path d={wave} pathLength={1} fill="none" strokeWidth="1.2" vectorEffect="non-scaling-stroke" className="draw stroke-cyan"/></svg>
+<div className="relative z-10 mx-auto w-full max-w-[1600px]">
+<h1 ref={tt} className="font-display text-[clamp(2.7rem,11vw,11rem)] font-extrabold leading-[.99] tracking-[-.100]">{['Ayatullah Al','Khomeini'].map((l,i)=><span key={l} className={`block overflow-hidden pb-[.20em] ${i?'md:pl-[8vw]':''}`}><span className="rise block" style={{animationDelay:`${.2+i*.15}s`}}>{l}</span></span>)}</h1>
+<div className="mt-12 flex flex-col gap-8 md:flex-row md:items-end md:justify-between"><p style={{'--d':'.9s'} as React.CSSProperties} className="enter max-w-[20rem] text-lg leading-snug text-bone/75 md:ml-[6vw]">Original electronic music. Cinematic energy.</p>
+<div style={{'--d':'1.1s'} as React.CSSProperties} className="enter flex flex-wrap gap-3"><Button href="#music">EXPLORE MUSIC</Button><Button href="#about" variant="ghost">DISCOVER AAK</Button></div></div></div></section>}

@@ -1,0 +1,1 @@
+Logo: public/images/aak-music-logo.png (transparent PNG; also the favicon). Optional light-theme variant: aak-music-logo-light.png + site.brand.logoLight. Cover art: image:'/images/x.jpg' in src/data.

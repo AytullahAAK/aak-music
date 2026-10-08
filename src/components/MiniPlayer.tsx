@@ -1,0 +1,11 @@
+import {usePlayer,useTime,fmt,statusLabel} from '../hooks/usePlayer';import Art from './Art';import Icon,{Eq} from './Icon';import Slider from './Slider';
+const B=({l,f,n}:{l:string;f:()=>void;n:'prev'|'next'})=><button aria-label={l} onClick={f} className="grid h-10 w-10 shrink-0 place-items-center text-bone/75 transition hover:text-bone active:scale-90"><Icon n={n}/></button>;
+export default function MiniPlayer(){const p=usePlayer(),{t,dur}=useTime(),{track:k}=p,d=dur||k.dur,msg=statusLabel(p.status);
+return <div role="region" aria-label="Music player" className="fixed inset-x-0 bottom-0 z-50 w-full max-w-[100vw] overflow-hidden border-t border-bone/15 bg-ink/85 backdrop-blur-2xl mobile-player-safe">
+<Slider label="Seek" value={t} max={d} disabled={!k.src||!dur} onChange={p.seek} className="absolute inset-x-0 -top-2"/>
+<div className="mx-auto grid w-full min-w-0 max-w-[1600px] grid-cols-[auto,minmax(0,1fr),auto] items-center gap-1 overflow-hidden px-2 py-2.5 sm:gap-2 sm:px-3 md:flex md:gap-4 md:px-12 md:py-3">
+<a href="#player" aria-label="Go to featured release" className="shrink-0"><Art a={k.a} b={k.b} image={k.image} className="h-8 w-8 sm:h-11 sm:w-11 md:h-11 md:w-11"/></a>
+<div className="min-w-0 flex-1 overflow-hidden" aria-live="polite"><p className="flex min-w-0 items-center gap-1 truncate text-[12px] font-semibold sm:text-sm md:gap-2 md:font-medium"><Eq on={p.playing}/><span className="min-w-0 truncate">{k.title}</span></p><p className={`truncate text-[10px] sm:text-xs ${msg?'text-cyan':'text-bone/65 md:text-bone/60'}`}>{msg??k.artist}</p></div>
+<span className="hidden text-xs tabular-nums text-bone/60 md:block">{fmt(t)} / {fmt(d)}</span>
+<div className="flex shrink-0 items-center justify-end gap-0 md:gap-0"><B l="Previous track" f={p.prev} n="prev"/><button aria-label={p.playing?'Pause':'Play'} onClick={p.toggle} className="mx-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-bone text-ink transition duration-300 hover:scale-105 hover:bg-cyan active:scale-95 md:mx-1 md:h-11 md:w-11"><Icon n={p.playing?'pause':'play'} s={17}/></button><B l="Next track" f={p.next} n="next"/></div>
+<Slider label="Volume" value={p.vol} max={1} onChange={p.setVol} className="hidden w-24 md:block"/></div></div>}

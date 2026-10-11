@@ -5,8 +5,14 @@ return <section id="player" className="relative overflow-hidden px-6 py-32 md:px
 <div ref={ref} className="reveal relative mx-auto grid max-w-[1600px] items-center gap-14 lg:grid-cols-12">
 <div className="relative lg:col-span-6"><Art a={k.a} b={k.b} image={k.image} className="aspect-square w-full lg:w-[88%]"/>
 <span ref={bpm} aria-hidden className="pointer-events-none absolute -bottom-6 left-4 font-display text-[clamp(4rem,12vw,11rem)] font-extrabold leading-none tracking-[-.04em] text-white mix-blend-difference lg:left-[40%]">{k.bpm}</span></div>
-<div className="lg:col-span-5 lg:col-start-8"><p className="text-sm text-bone/60">Featured release</p>
-<h2 className="mt-4 font-display text-5xl font-extrabold leading-[.92] tracking-[-.03em] md:text-7xl">{k.title}</h2><p className="mt-4 text-xl text-bone/80">{k.artist}</p>
+<div className="lg:col-span-5 lg:col-start-8">
+<div className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-3.5 py-1 text-xs font-mono font-medium tracking-widest text-cyan mb-3">
+  <span>SCENE 06</span>
+  <span>//</span>
+  <span>FEATURED MASTER RELEASE</span>
+</div>
+<p className="text-sm font-mono text-bone/60">FLAGSHIP PRODUCTION</p>
+<h2 className="mt-2 font-display text-5xl font-extrabold leading-[.92] tracking-[-.03em] md:text-7xl">{k.title}</h2><p className="mt-3 text-xl text-bone/80">{k.artist}</p>
 <dl className="mt-8 grid max-w-md grid-cols-3 gap-6 border-t border-bone/15 pt-6">{[['Genre',k.genre],['BPM',k.bpm],['Released',k.date]].map(([a,b])=><div key={a}><dt className="text-xs text-bone/60">{a}</dt><dd className="mt-1 text-sm">{b}</dd></div>)}</dl>
 <div className="mt-10 flex w-full min-w-0 max-w-full items-center gap-3 overflow-hidden sm:gap-6"><button aria-label={on&&p.playing?'Pause':'Play'} onClick={()=>on?p.toggle():p.play(0)} className="relative grid h-14 w-14 shrink-0 place-items-center transition duration-500 hover:scale-105 sm:h-20 sm:w-20">
 <svg viewBox="0 0 80 80" className="absolute inset-0 -rotate-90"><circle cx="40" cy="40" r="38" fill="none" className="stroke-bone/15"/><circle cx="40" cy="40" r="38" fill="none" className="stroke-cyan" strokeWidth="2" strokeDasharray={239} strokeDashoffset={239*(1-pr)}/></svg><Icon n={on&&p.playing?'pause':'play'} s={22}/></button>

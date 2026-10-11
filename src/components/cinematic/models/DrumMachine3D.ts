@@ -293,3 +293,4 @@ export function createDrumMachine3D(): DrumMachineInstance {
 
   return { group, update, destroy };
 }
+

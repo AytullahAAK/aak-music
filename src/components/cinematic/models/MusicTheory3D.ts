@@ -218,3 +218,4 @@ export function createMusicTheory3D(): MusicTheoryInstance {
 
   return { group, update, destroy };
 }
+

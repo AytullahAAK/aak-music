@@ -259,3 +259,4 @@ export function createModular3D(): ModularInstance {
 
   return { group, update, destroy };
 }
+

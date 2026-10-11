@@ -349,3 +349,4 @@ export function createSynth3D(): SynthInstance {
 
   return { group, update, destroy };
 }
+

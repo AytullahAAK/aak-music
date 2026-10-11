@@ -3,7 +3,6 @@ import { PlayerProvider } from './hooks/usePlayer';
 import { UIProvider } from './hooks/useUI';
 import { usePointerTracking } from './hooks/motion';
 
-import CinematicCanvas from './components/cinematic/CinematicCanvas';
 import AudioVisualizerBackground from './components/AudioVisualizerBackground';
 import CursorGlow from './components/CursorGlow';
 import CustomCursor from './components/CustomCursor';
@@ -34,9 +33,6 @@ export default function App() {
     <ThemeProvider>
       <PlayerProvider>
         <UIProvider>
-          {/* Real 3D Cinematic Canvas Layer */}
-          <CinematicCanvas />
-
           {/* Audio-Reactive 2D Background Visualizer */}
           <AudioVisualizerBackground />
 

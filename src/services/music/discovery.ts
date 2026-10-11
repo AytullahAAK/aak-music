@@ -18,6 +18,7 @@ async function check(endpoint: string, signal?: AbortSignal) {
 
 export const checkYouTubeConfiguration = (signal?: AbortSignal) => check('/api/youtube-search', signal);
 export const checkAppleCatalog = (signal?: AbortSignal) => check('/api/itunes-search', signal);
+export const checkAppleMusicCatalogConfiguration = (signal?: AbortSignal) => check('/api/apple-music-search', signal);
 export const checkAppleMusicKitConfiguration = async (signal?: AbortSignal) => {
   const response = await fetch('/api/apple-music-token?status=1', { signal });
   if (!response.ok) return false;
@@ -27,9 +28,10 @@ export const checkAppleMusicKitConfiguration = async (signal?: AbortSignal) => {
 export const checkSpotifyConfiguration = (signal?: AbortSignal) => check('/api/spotify-search', signal);
 
 export const appleMusicProvider = {
-  async search(query: string, signal?: AbortSignal) {
+  async search(query: string, signal?: AbortSignal, useAppleMusicCatalog = false) {
     const country = typeof navigator !== 'undefined' ? navigator.language.split('-')[1]?.toLowerCase() : undefined;
-    const base = `/api/itunes-search?q=${encodeURIComponent(query)}${country ? `&country=${encodeURIComponent(country)}` : ''}`;
+    const endpoint = useAppleMusicCatalog ? '/api/apple-music-search' : '/api/itunes-search';
+    const base = `${endpoint}?q=${encodeURIComponent(query)}${country ? `&country=${encodeURIComponent(country)}` : ''}`;
     const response = await fetch(base, { signal });
     const data = await response.json() as ApiPayload<AppleMusicResult>;
     if (!response.ok) throw new Error(data.error || `Apple Music search returned HTTP ${response.status}.`);

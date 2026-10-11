@@ -33,6 +33,7 @@ interface UniversalPlayerContextValue {
   error: string;
   videoPlaying: boolean;
   videoReady: boolean;
+  videoMode: boolean;
   setVideoController: (controller: YouTubeTransportController | null) => void;
   syncVideo: (state: number, currentTime: number, duration: number) => void;
   toggleVideo: () => void;
@@ -40,7 +41,10 @@ interface UniversalPlayerContextValue {
   setVideoVolume: (volume: number) => void;
   playAudio: (track: AudioCatalogTrack) => void;
   playAppleMusic: (track: AudioCatalogTrack) => void;
+  selectVideo: (video: YouTubeResult) => void;
   playVideo: (video: YouTubeResult) => void;
+  enterVideoMode: () => void;
+  exitVideoMode: () => void;
   addToQueue: (track: AudioCatalogTrack) => void;
   clearQueue: () => void;
   playQueued: (index: number) => void;
@@ -80,6 +84,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState('');
   const [videoPlaying, setVideoPlaying] = useState(false);
   const [videoReady, setVideoReady] = useState(false);
+  const [videoMode, setVideoMode] = useState(false);
   const [videoTime, setVideoTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
 
@@ -130,7 +135,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     setError('');
     setActiveVideo(null);
     setPlaybackOwner('catalogue-audio');
-    setVideoPlaying(false); setVideoReady(false); setVideoTime(0); setVideoDuration(0); videoControllerRef.current = null;
+    setVideoPlaying(false); setVideoReady(false); setVideoMode(false); setVideoTime(0); setVideoDuration(0); videoControllerRef.current = null;
     setActiveAudio(track);
     setQueueIndex(index);
     audio.volume = volume;
@@ -157,7 +162,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     if (player.playing) player.toggle();
     setPlaying(false); setTime(0); setDuration(0); setError('Connecting to Apple Music…');
     setActiveAudio(track);
-    setActiveVideo(null); setVideoPlaying(false); setVideoReady(false); videoControllerRef.current = null;
+    setActiveVideo(null); setVideoPlaying(false); setVideoReady(false); setVideoMode(false); videoControllerRef.current = null;
     try {
       const kit = await getMusicKitInstance();
       musicKitRef.current = kit;
@@ -202,7 +207,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     else beginAudio(track, index);
   }, [beginAudio, player, queue, playAppleMusic]);
 
-  const playVideo = useCallback((video: YouTubeResult) => {
+  const selectVideo = useCallback((video: YouTubeResult) => {
     pauseCurrent();
     claimPlayback('youtube-iframe');
     musicKitRef.current?.player.stop();
@@ -213,14 +218,34 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     setPlaying(false);
     setTime(0);
     setDuration(0);
-    setVideoPlaying(false); setVideoReady(false); setVideoTime(0); setVideoDuration(0); videoControllerRef.current = null;
+    setVideoPlaying(false); setVideoReady(false); setVideoMode(false); setVideoTime(0); setVideoDuration(0); videoControllerRef.current = null;
     setError('');
     player.setIsExpanded(true);
     const audio = player.getAudioElement();
     if (audio) { audio.removeAttribute('src'); audio.load(); }
   }, [pauseCurrent, player]);
 
-  const closeVideo = useCallback(() => { setActiveVideo(null); setVideoPlaying(false); setVideoReady(false); setVideoTime(0); setVideoDuration(0); videoControllerRef.current = null; setPlaybackOwner('none'); }, []);
+  const enterVideoMode = useCallback(() => {
+    if (!activeVideo) return;
+    setError('');
+    setVideoMode(true);
+    setPlaybackOwner('youtube-iframe');
+  }, [activeVideo]);
+
+  const exitVideoMode = useCallback(() => {
+    videoControllerRef.current?.pauseVideo();
+    setVideoMode(false);
+    setVideoPlaying(false);
+    setError('');
+    setPlaybackOwner('none');
+  }, []);
+
+  const playVideo = useCallback((video: YouTubeResult) => {
+    selectVideo(video);
+    setVideoMode(true);
+  }, [selectVideo]);
+
+  const closeVideo = useCallback(() => { videoControllerRef.current?.pauseVideo(); setActiveVideo(null); setVideoPlaying(false); setVideoReady(false); setVideoMode(false); setVideoTime(0); setVideoDuration(0); videoControllerRef.current = null; setPlaybackOwner('none'); }, []);
 
   const setVideoController = useCallback((controller: YouTubeTransportController | null) => { videoControllerRef.current = controller; setVideoReady(Boolean(controller)); }, []);
   const syncVideo = useCallback((state: number, currentTime: number, total: number) => {
@@ -229,8 +254,9 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     setVideoDuration(Number.isFinite(total) ? Math.max(0, total) : 0);
   }, []);
   const toggleVideo = useCallback(() => {
+    if (!videoMode) return;
     if (videoPlaying) videoControllerRef.current?.pauseVideo(); else videoControllerRef.current?.playVideo();
-  }, [videoPlaying]);
+  }, [videoMode, videoPlaying]);
   const seekVideo = useCallback((seconds: number) => videoControllerRef.current?.seekTo(Math.max(0, Math.min(videoDuration || seconds, seconds))), [videoDuration]);
   const setVideoVolume = useCallback((next: number) => {
     const normalized = Math.max(0, Math.min(1, next));
@@ -293,7 +319,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   }, [activeAudio, beginAudio, playAppleMusic, playQueued, playing, queue.length, queueIndex, repeat, time, player.getAudioElement]);
 
   const toggle = useCallback(() => {
-    if (activeVideo) { if (videoPlaying) videoControllerRef.current?.pauseVideo(); else videoControllerRef.current?.playVideo(); return; }
+    if (activeVideo) { if (!videoMode) return; if (videoPlaying) videoControllerRef.current?.pauseVideo(); else videoControllerRef.current?.playVideo(); return; }
     if (activeAudio?.playbackKind === 'subscription') {
       const kit = musicKitRef.current;
       if (!kit) return;
@@ -306,7 +332,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
       attachAnalyser(audio);
       void audio.play().catch(() => setError('The audio could not resume. Try again or open the provider link.'));
     } else audio.pause();
-  }, [activeAudio, activeVideo, player.getAudioElement, videoPlaying]);
+  }, [activeAudio, activeVideo, player.getAudioElement, videoMode, videoPlaying]);
 
   const seek = useCallback((seconds: number) => {
     if (activeAudio?.playbackKind === 'subscription') {
@@ -421,11 +447,11 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<UniversalPlayerContextValue>(() => ({
     activeAudio, activeVideo, queue, queueIndex, playing, volume, repeat, shuffle, error,
-    videoPlaying, videoReady, setVideoController, syncVideo, toggleVideo, seekVideo, setVideoVolume,
-    playAudio, playAppleMusic, playVideo, addToQueue, clearQueue, playQueued, closeVideo, closeAudio, toggle, next, prev, seek, setVolume,
+    videoPlaying, videoReady, videoMode, setVideoController, syncVideo, toggleVideo, seekVideo, setVideoVolume,
+    playAudio, playAppleMusic, selectVideo, playVideo, enterVideoMode, exitVideoMode, addToQueue, clearQueue, playQueued, closeVideo, closeAudio, toggle, next, prev, seek, setVolume,
     setRepeat: setRepeatMode, setShuffle: setShuffleMode, setError, syncAudio, onEnded,
-  }), [activeAudio, activeVideo, queue, queueIndex, playing, volume, repeat, shuffle, error, videoPlaying, videoReady,
-    setVideoController, syncVideo, toggleVideo, seekVideo, setVideoVolume, playAudio, playAppleMusic, playVideo, addToQueue, clearQueue, playQueued, closeVideo, closeAudio, toggle, next, prev, seek, setVolume, setRepeatMode, setShuffleMode, syncAudio, onEnded]);
+  }), [activeAudio, activeVideo, queue, queueIndex, playing, volume, repeat, shuffle, error, videoPlaying, videoReady, videoMode,
+    setVideoController, syncVideo, toggleVideo, seekVideo, setVideoVolume, playAudio, playAppleMusic, selectVideo, playVideo, enterVideoMode, exitVideoMode, addToQueue, clearQueue, playQueued, closeVideo, closeAudio, toggle, next, prev, seek, setVolume, setRepeatMode, setShuffleMode, syncAudio, onEnded]);
 
   const clock = useMemo(() => ({ time, duration, videoTime, videoDuration }), [time, duration, videoTime, videoDuration]);
   return (

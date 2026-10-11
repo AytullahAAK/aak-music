@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { detectLyricsLanguage } from '../utils/languageDetect';
 
-type ServiceStatus = { configured?: boolean; transcriptionModel?: string; translationModel?: string };
+type LyricsContext = { title: string; artist: string; provider: string; sourceUrl?: string; sourceKind: 'local' | 'third-party' };
+type ServiceStatus = { configured?: boolean; transcriptionModel?: string | null; translationModel?: string; modelConfigurationError?: string };
 type ServiceResult = { error?: string; text?: string; languages?: string[]; confidence?: number | null; label?: string };
 const targetLanguages = [
   ['en', 'English'], ['bn', 'Bengali'], ['ar', 'Arabic'], ['es', 'Spanish'], ['hi', 'Hindi'],
@@ -33,9 +34,10 @@ function inferredMime(file: File) {
   return ({ mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', webm: 'audio/webm', ogg: 'audio/ogg', flac: 'audio/flac', aac: 'audio/aac', mp4: 'video/mp4' } as Record<string, string>)[extension || ''] || 'audio/mpeg';
 }
 
-export default function LyricsAssistant() {
+export default function LyricsAssistant({ context }: { context?: LyricsContext }) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
   const [statusError, setStatusError] = useState('');
+  const [lyricsLookupMessage, setLyricsLookupMessage] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [audioAuthorized, setAudioAuthorized] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -55,7 +57,10 @@ export default function LyricsAssistant() {
       .then(async (response) => {
         const result = await response.json() as ServiceStatus & { error?: string };
         if (!response.ok) throw new Error(result.error || 'Could not check the AI service configuration.');
-        if (active) setStatus(result.configured ? 'ready' : 'missing');
+        if (active) {
+          if (result.modelConfigurationError) { setStatus('error'); setStatusError(result.modelConfigurationError); }
+          else setStatus(result.configured ? 'ready' : 'missing');
+        }
       })
       .catch((error: unknown) => { if (active) { setStatus('error'); setStatusError(error instanceof Error ? error.message : 'Could not check the AI service configuration.'); } });
     return () => { active = false; };
@@ -99,7 +104,16 @@ export default function LyricsAssistant() {
     } finally { setTranslating(false); }
   };
 
-  return <div className="mt-3 space-y-4">
+  return <div className="mt-3 min-w-0 space-y-4">
+    {context && <section aria-label="Selected track for lyrics" className="rounded-xl border border-bone/10 bg-ink/30 p-3 sm:p-4">
+      <p className="text-[9px] font-mono uppercase tracking-wider text-cyan">LYRICS FOR THIS SELECTION</p>
+      <p className="mt-1 break-words text-sm font-semibold text-bone">{context.title}</p>
+      <p className="mt-1 break-words text-xs text-bone/55">{context.artist} · {context.provider}</p>
+      <p className="mt-2 text-[10px] leading-5 text-bone/45">No licensed lyrics catalog is connected, so this player cannot retrieve or generate official song lyrics. You can enter authorized text or transcribe a recording you own below.</p>
+      {context.sourceUrl && <a href={context.sourceUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex min-h-10 items-center rounded-full border border-bone/15 px-3 text-[10px] text-bone/70 hover:border-cyan hover:text-cyan">Open official {context.provider} source ↗</a>}
+      <button type="button" onClick={() => setLyricsLookupMessage('No licensed lyrics provider is configured for this site. This track cannot be queried for full lyrics here. Use the official source link above, enter text you are authorized to use, or transcribe an authorized recording below.')} className="mt-2 inline-flex min-h-10 items-center rounded-full bg-cyan px-4 text-[10px] font-bold text-ink transition hover:brightness-110">Find Lyrics</button>
+      {lyricsLookupMessage && <p role="status" className="mt-2 text-[10px] leading-5 text-bone/55">{lyricsLookupMessage}</p>}
+    </section>}
     <section className="rounded-xl border border-bone/10 bg-ink/30 p-3 sm:p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div><h4 className="text-xs font-semibold text-bone">Lyrics & language</h4><p className="mt-1 text-[10px] leading-5 text-bone/55">No licensed lyrics catalogue is connected. Add text you are allowed to use or request an AI transcription from a file you select.</p></div>
@@ -116,7 +130,7 @@ export default function LyricsAssistant() {
       </div>
       <label className="mt-2 flex min-h-10 items-start gap-2 text-[10px] leading-5 text-bone/55"><input type="checkbox" checked={audioAuthorized} onChange={(event) => setAudioAuthorized(event.target.checked)} className="mt-1 accent-cyan" /><span>I own this audio or have permission to submit it for processing. The selected file is sent to the configured AI provider; this site does not save it.</span></label>
       {transcriptionError && <p role="alert" className="mt-2 text-[10px] leading-5 text-amber-100/80">{transcriptionError}</p>}
-      <p className="mt-1 text-[9px] leading-4 text-bone/40">File transcription accepts audio up to 2.5 MB here. Singing recognition can be inaccurate. The transcript is an editable estimate, not official lyrics or verified subtitles.</p>
+      <p className="mt-1 text-[9px] leading-4 text-bone/40">{context?.sourceKind === 'third-party' ? 'Provider playback audio is not captured or transcribed. Select and submit a separate recording you own or are authorized to process. ' : ''}File transcription accepts audio up to 2.5 MB here. Singing recognition can be inaccurate. The transcript is an editable estimate, not official lyrics or verified subtitles.</p>
     </section>
 
     <div>

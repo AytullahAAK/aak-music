@@ -12,7 +12,7 @@ function FullPlayerModal() {
   const universal = useUniversalPlayer();
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const open = local.isExpanded || Boolean(universal.activeVideo);
+  const open = local.isExpanded;
 
   useEffect(() => {
     if (!open) return;
@@ -25,7 +25,7 @@ function FullPlayerModal() {
         // Let an open, nested player control close itself before the player shell.
         if (document.getElementById('aak-equalizer-panel')) return;
         event.preventDefault();
-        if (universal.activeVideo) universal.closeVideo();
+        if (universal.activeVideo && universal.videoMode) universal.exitVideoMode();
         local.setIsExpanded(false);
         return;
       }
@@ -43,11 +43,11 @@ function FullPlayerModal() {
       window.removeEventListener('keydown', handleKeyDown);
       previousActive?.focus();
     };
-  }, [open, local.setIsExpanded, universal.activeVideo, universal.closeVideo]);
+  }, [open, local.setIsExpanded, universal.activeVideo, universal.videoMode, universal.exitVideoMode]);
 
   if (!open) return null;
   const close = () => {
-    if (universal.activeVideo) universal.closeVideo();
+    if (universal.activeVideo && universal.videoMode) universal.exitVideoMode();
     local.setIsExpanded(false);
   };
 

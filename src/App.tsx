@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef } from 'react';
 import { ThemeProvider } from './hooks/useTheme';
 import { PlayerProvider, useSetPlayerExpanded } from './hooks/usePlayer';
 import { UniversalPlayerProvider } from './hooks/useUniversalPlayer';
+import { useUniversalPlayer } from './hooks/useUniversalPlayer';
 import { VisualizerProvider } from './hooks/useVisualizer';
 import { UIProvider } from './hooks/useUI';
 import { usePointerTracking } from './hooks/motion';
@@ -25,7 +26,8 @@ function ApplicationShell() {
   const location = useLocation();
   const pathname = location.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
   const setIsExpanded = useSetPlayerExpanded();
-  const previousPath = useRef(pathname);
+  const universal = useUniversalPlayer();
+  const previousPath = useRef<string | null>(null);
   const pages: Record<string, typeof HomePage> = {
     '/': HomePage,
     '/music': MusicPage,
@@ -37,15 +39,22 @@ function ApplicationShell() {
 
   useEffect(() => {
     const previous = previousPath.current;
-    if (pathname === '/player') setIsExpanded(true);
-    else if (previous === '/player') setIsExpanded(false);
-    previousPath.current = pathname;
+    if (previous !== pathname) {
+      if (pathname === '/player') setIsExpanded(true);
+      else if (previous === '/player') {
+        setIsExpanded(false);
+        // The official YouTube player cannot keep playing invisibly on another page.
+        // Pause it and retain the selected video/time so the user can resume in Video Mode.
+        if (universal.activeVideo && universal.videoMode) universal.exitVideoMode();
+      }
+      previousPath.current = pathname;
+    }
     const hash = window.location.hash.slice(1);
     requestAnimationFrame(() => {
       if (hash) document.getElementById(decodeURIComponent(hash))?.scrollIntoView({ block: 'start' });
       else if (previous !== pathname) window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     });
-  }, [location, pathname, setIsExpanded]);
+  }, [location, pathname, setIsExpanded, universal.activeVideo, universal.videoMode, universal.exitVideoMode]);
 
   return <>
     <Suspense fallback={null}><AudioVisualizerBackground /></Suspense>

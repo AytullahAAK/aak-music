@@ -2,6 +2,7 @@ import { usePointerShift } from '../hooks/usePointerShift';
 import Button from '../components/Button';
 import { useParallax } from '../hooks/useParallax';
 import { usePlayer } from '../hooks/usePlayer';
+import { RouteLink } from '../router';
 
 export default function Hero() {
   const bg = useParallax<HTMLDivElement>(-0.15);
@@ -110,23 +111,19 @@ export default function Hero() {
             >
               {playing ? 'PAUSE MUSIC' : 'PLAY FEATURED'}
             </Button>
-            <Button href="#music" variant="ghost">
-              BROWSE CATALOGUE
-            </Button>
+            <RouteLink to="/music" className="inline-flex min-h-11 items-center justify-center rounded-full border border-bone/20 px-5 text-xs font-bold tracking-wide text-bone transition hover:border-cyan hover:text-cyan">EXPLORE MUSIC</RouteLink>
+            <RouteLink to="/player" className="inline-flex min-h-11 items-center justify-center rounded-full px-4 text-xs font-bold tracking-wide text-cyan transition hover:bg-cyan/10">OPEN PLAYER</RouteLink>
           </div>
         </div>
 
         {/* Scroll Cue Indicator */}
         <div className="mt-8 flex items-center justify-between border-t border-bone/15 pt-4 text-[10px] font-mono text-bone/60 sm:mt-12 sm:pt-6 sm:text-xs md:mt-14">
-          <a
-            href="#player"
-            className="group flex items-center gap-3 transition-colors hover:text-cyan"
-          >
+          <RouteLink to="/player" className="group flex items-center gap-3 transition-colors hover:text-cyan">
             <span className="flex h-7 w-4 items-start justify-center rounded-full border border-bone/30 p-1 group-hover:border-cyan">
               <span className="h-1.5 w-1 rounded-full bg-cyan animate-bounce" />
             </span>
             <span>EXPLORE MUSIC & PRODUCTION PLATFORM</span>
-          </a>
+          </RouteLink>
 
           <div className="hidden sm:flex items-center gap-4">
             <span>SOUND ENGINE: 44.1 kHz / 24-BIT</span>

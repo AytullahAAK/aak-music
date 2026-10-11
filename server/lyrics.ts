@@ -11,6 +11,9 @@ const supportedAudio = new Map<string, string>([
   ['audio/flac', 'flac'], ['audio/x-flac', 'flac'], ['audio/aac', 'aac'], ['audio/x-aac', 'aac'], ['video/mp4', 'mp4'],
 ]);
 const allowedTargets = new Set(['en', 'bn', 'ar', 'es', 'hi']);
+const transcriptionModels = new Set(['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'whisper-1']);
+const defaultTranscriptionModel = 'gpt-4o-mini-transcribe';
+const defaultTextModel = 'gpt-4.1-mini';
 
 function jsonError(response: Response, prefix: string) {
   return response.json().then((body: unknown) => {
@@ -25,12 +28,20 @@ function jsonError(response: Response, prefix: string) {
 }
 
 export function lyricsStatus(env: Env): LyricsResponse {
-  return { statusCode: 200, body: { configured: Boolean(env.OPENAI_API_KEY?.trim()), transcriptionModel: 'gpt-transcribe', translationModel: env.OPENAI_LYRICS_MODEL?.trim() || 'gpt-6-luna' } };
+  const requestedModel = env.OPENAI_TRANSCRIPTION_MODEL?.trim() || defaultTranscriptionModel;
+  return { statusCode: 200, body: {
+    configured: Boolean(env.OPENAI_API_KEY?.trim()),
+    transcriptionModel: transcriptionModels.has(requestedModel) ? requestedModel : null,
+    translationModel: env.OPENAI_LYRICS_MODEL?.trim() || defaultTextModel,
+    modelConfigurationError: transcriptionModels.has(requestedModel) ? undefined : 'OPENAI_TRANSCRIPTION_MODEL is unsupported. Choose gpt-4o-mini-transcribe, gpt-4o-transcribe, or whisper-1.',
+  } };
 }
 
 export async function transcribeLyrics(body: unknown, env: Env): Promise<LyricsResponse> {
   const apiKey = env.OPENAI_API_KEY?.trim();
   if (!apiKey) return { statusCode: 503, body: { error: 'AI transcription is not configured. Add OPENAI_API_KEY to the server environment.' } };
+  const model = env.OPENAI_TRANSCRIPTION_MODEL?.trim() || defaultTranscriptionModel;
+  if (!transcriptionModels.has(model)) return { statusCode: 503, body: { error: 'OPENAI_TRANSCRIPTION_MODEL is unsupported. Choose gpt-4o-mini-transcribe, gpt-4o-transcribe, or whisper-1.' } };
   if (!body || typeof body !== 'object') return { statusCode: 400, body: { error: 'The transcription request is invalid.' } };
   const input = body as { authorized?: unknown; fileName?: unknown; mimeType?: unknown; base64?: unknown };
   if (input.authorized !== true) return { statusCode: 400, body: { error: 'Confirm that you own or are authorized to process this audio.' } };
@@ -48,7 +59,7 @@ export async function transcribeLyrics(body: unknown, env: Env): Promise<LyricsR
   try { bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0)); }
   catch { return { statusCode: 400, body: { error: 'The selected audio file could not be decoded.' } }; }
   const form = new FormData();
-  form.set('model', 'gpt-transcribe');
+  form.set('model', model);
   form.set('response_format', 'json');
   const blobBytes = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(blobBytes).set(bytes);
@@ -62,7 +73,7 @@ export async function transcribeLyrics(body: unknown, env: Env): Promise<LyricsR
     const result = await response.json() as { text?: unknown; languages?: Array<{ code?: unknown }> };
     if (typeof result.text !== 'string' || !result.text.trim()) return { statusCode: 422, body: { error: 'No usable words were detected. Try a clearer, shorter excerpt or edit the lyrics yourself.' } };
     const languages = (result.languages || []).flatMap((item) => typeof item.code === 'string' ? [item.code] : []);
-    return { statusCode: 200, body: { text: result.text, languages, confidence: null, model: 'gpt-transcribe', label: 'AI transcription estimate' } };
+    return { statusCode: 200, body: { text: result.text, languages, confidence: null, model, label: 'AI transcription estimate' } };
   } catch {
     return { statusCode: 502, body: { error: 'Could not reach the transcription service. Check server connectivity and try again.' } };
   }
@@ -78,7 +89,7 @@ export async function translateLyrics(body: unknown, env: Env): Promise<LyricsRe
   if (typeof input.targetLanguage !== 'string' || !allowedTargets.has(input.targetLanguage)) return { statusCode: 400, body: { error: 'Choose one of the supported translation languages.' } };
 
   const languageNames: Record<string, string> = { en: 'English', bn: 'Bengali', ar: 'Arabic', es: 'Spanish', hi: 'Hindi' };
-  const model = env.OPENAI_LYRICS_MODEL?.trim() || 'gpt-6-luna';
+  const model = env.OPENAI_LYRICS_MODEL?.trim() || defaultTextModel;
   try {
     const response = await fetch('https://api.openai.com/v1/responses', {
       method: 'POST',

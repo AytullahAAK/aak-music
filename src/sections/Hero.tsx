@@ -2,16 +2,16 @@ import { usePointerShift } from '../hooks/usePointerShift';
 import Button from '../components/Button';
 import { useParallax } from '../hooks/useParallax';
 import { usePlayer } from '../hooks/usePlayer';
-import Logo from '../components/Logo';
 
 export default function Hero() {
-  const bg = useParallax<HTMLDivElement>(-0.2);
-  const tt = usePointerShift<HTMLHeadingElement>(3);
+  const bg = useParallax<HTMLDivElement>(-0.15);
+  // Pointer shift on desktop only with small amplitude (1.5px) so text never drifts outside container
+  const tt = usePointerShift<HTMLHeadingElement>(1.5);
   const { playing, toggle, play } = usePlayer();
 
   return (
-    <section className="relative flex min-h-[100svh] items-end overflow-hidden px-6 pb-20 pt-32 md:px-12 md:pb-28">
-      {/* Cinematic Atmospheric Lighting Layer */}
+    <section className="relative flex min-h-[100svh] items-end overflow-hidden px-4 pb-16 pt-24 sm:px-6 sm:pb-20 sm:pt-28 md:px-12 md:pb-28">
+      {/* Atmospheric Lighting Layer */}
       <div
         ref={bg}
         aria-hidden="true"
@@ -43,55 +43,63 @@ export default function Hero() {
       />
 
       <div className="relative z-10 mx-auto w-full max-w-[1600px]">
-        {/* Scene Indicator & Badge */}
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          <div className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-3.5 py-1 text-xs font-mono font-medium tracking-widest text-cyan">
-            <span>SCENE 01</span>
+        {/* Brand Badge */}
+        <div className="mb-4 sm:mb-6 flex flex-wrap items-center gap-3">
+          <div className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-[10px] font-mono font-medium tracking-widest text-cyan sm:px-3.5 sm:text-xs">
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan animate-pulse" />
+            <span>AAK MUSIC</span>
             <span>//</span>
-            <span>AAK MUSIC IDENTITY</span>
-          </div>
-
-          <div className="inline-flex items-center gap-2 rounded-full border border-bone/15 bg-void/60 px-3.5 py-1 text-xs font-mono text-bone/70 backdrop-blur-md">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-            <span>INTERACTIVE 3D REALM ACTIVE</span>
+            <span>ELECTRONIC PRODUCER</span>
           </div>
         </div>
 
-        {/* Hero Title */}
-        <div className="max-w-5xl">
+        {/* Hero Title: "Ayatullah Al Khomeini"
+            Engineered with fluid typography and structured words so NO letter is ever clipped at any screen size from 320px to ultrawide. */}
+        <div className="max-w-6xl overflow-visible">
           <h1
             ref={tt}
-            className="font-display text-[clamp(2.5rem,8.5vw,9.5rem)] font-extrabold leading-[.92] tracking-[-.04em]"
+            className="font-display font-extrabold leading-[0.92] tracking-[-0.03em] sm:tracking-[-0.04em] text-[clamp(1.75rem,7.2vw,9.5rem)] text-bone overflow-visible"
           >
-            {['AYATULLAH AL', 'KHOMEINI'].map((l, i) => (
+            {/* Line 1: AYATULLAH AL */}
+            <span className="block overflow-visible pb-[0.06em]">
+              <span className="rise inline-block whitespace-nowrap">
+                Ayatullah
+              </span>{' '}
               <span
-                key={l}
-                className={`block overflow-hidden pb-[.15em] ${i ? 'md:pl-[6vw]' : ''}`}
+                className="rise inline-block whitespace-nowrap"
+                style={{ animationDelay: '0.12s' }}
               >
-                <span
-                  className="rise block"
-                  style={{ animationDelay: `${0.15 + i * 0.15}s` }}
-                >
-                  {l}
-                </span>
+                Al
               </span>
-            ))}
+            </span>
+
+            {/* Line 2: KHOMEINI (gracefully indented on tablet/desktop, naturally aligned on phone) */}
+            <span className="block overflow-visible pb-[0.06em] sm:mt-1 md:pl-[6vw]">
+              <span
+                className="rise inline-block whitespace-nowrap"
+                style={{ animationDelay: '0.24s' }}
+              >
+                Khomeini
+              </span>
+            </span>
           </h1>
         </div>
 
         {/* Narrative Callout & Action Controls */}
-        <div className="mt-8 flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
+        <div className="mt-6 flex flex-col gap-6 md:mt-8 md:flex-row md:items-end md:justify-between md:gap-8">
           <div className="max-w-md md:ml-[6vw]">
-            <p className="text-base leading-relaxed text-bone/80 md:text-lg">
+            <p className="text-sm leading-relaxed text-bone/80 sm:text-base md:text-lg">
               Cinematic electronic music sculpted from pure analog synthesis, precision step
               rhythm, and modular sound architecture.
             </p>
-            <div className="mt-3 flex items-center gap-2 text-xs font-mono text-bone/60">
-              <span>EXPLORE SCENES 01–07</span>
-              <span>•</span>
-              <span>3D SYNTHESIZERS</span>
-              <span>•</span>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[10px] font-mono text-bone/60 sm:text-xs">
               <span>DISCOGRAPHY</span>
+              <span>•</span>
+              <span>MUSIC THEORY</span>
+              <span>•</span>
+              <span>SAMPLE VAULT</span>
+              <span>•</span>
+              <span>SERVICES</span>
             </div>
           </div>
 
@@ -102,27 +110,27 @@ export default function Hero() {
             >
               {playing ? 'PAUSE MUSIC' : 'PLAY FEATURED'}
             </Button>
-            <Button href="#synthesis" variant="ghost">
-              EXPLORE 3D INSTRUMENTS
+            <Button href="#music" variant="ghost">
+              BROWSE CATALOGUE
             </Button>
           </div>
         </div>
 
         {/* Scroll Cue Indicator */}
-        <div className="mt-14 flex items-center justify-between border-t border-bone/15 pt-6 text-xs font-mono text-bone/60">
+        <div className="mt-8 flex items-center justify-between border-t border-bone/15 pt-4 text-[10px] font-mono text-bone/60 sm:mt-12 sm:pt-6 sm:text-xs md:mt-14">
           <a
-            href="#synthesis"
+            href="#player"
             className="group flex items-center gap-3 transition-colors hover:text-cyan"
           >
             <span className="flex h-7 w-4 items-start justify-center rounded-full border border-bone/30 p-1 group-hover:border-cyan">
               <span className="h-1.5 w-1 rounded-full bg-cyan animate-bounce" />
             </span>
-            <span>SCROLL DOWN TO DIVE INTO THE SYNTHESIZER SCENE</span>
+            <span>EXPLORE MUSIC & PRODUCTION PLATFORM</span>
           </a>
 
           <div className="hidden sm:flex items-center gap-4">
             <span>SOUND ENGINE: 44.1 kHz / 24-BIT</span>
-            <span>STEREO FREQUENCY SPECTRUM LIVE</span>
+            <span>STEREO FREQUENCY SPECTRUM</span>
           </div>
         </div>
       </div>

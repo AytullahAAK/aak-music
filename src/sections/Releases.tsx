@@ -27,44 +27,42 @@ export default function Releases() {
   };
 
   return (
-    <section id="music" className="relative min-h-[100svh] px-6 py-28 md:px-12 md:py-40">
+    <section id="music" className="relative min-h-[100svh] px-4 py-20 sm:px-6 md:px-12 md:py-36">
       <div className="mx-auto max-w-[1600px]">
         {/* Section Header */}
-        <div className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
+        <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end md:gap-6">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-3.5 py-1 text-xs font-mono font-medium tracking-widest text-cyan">
-              <span>SCENE 06</span>
-              <span>//</span>
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-[10px] font-mono font-medium tracking-widest text-cyan sm:px-3.5 sm:text-xs">
               <span>AAK MUSIC CATALOGUE</span>
             </div>
 
             <div className="mt-4">
               <RevealText
                 as="h2"
-                className="font-display text-4xl font-extrabold leading-[.9] tracking-[-.03em] md:text-7xl"
+                className="font-display text-3xl font-extrabold leading-[.9] tracking-[-.03em] sm:text-4xl md:text-7xl"
                 lines={['LATEST', 'RELEASES']}
               />
             </div>
           </div>
 
-          <div className="max-w-md text-sm text-bone/70">
+          <div className="max-w-md text-xs text-bone/70 sm:text-sm">
             <p>
               The complete original discography of AAK Music. Select any record to stream
-              with full real-time audio analysis and 3D visual reactions.
+              with full real-time audio analysis and visual spectrum reactions.
             </p>
           </div>
         </div>
 
         {/* Genre Filter Pills */}
-        <div className="mt-10 flex flex-wrap items-center gap-2 border-b border-bone/15 pb-6">
-          <span className="mr-2 text-xs font-mono uppercase tracking-wider text-bone/50">
+        <div className="mt-8 flex flex-wrap items-center gap-1.5 border-b border-bone/15 pb-5 sm:mt-10 sm:gap-2 sm:pb-6">
+          <span className="mr-1 text-[10px] font-mono uppercase tracking-wider text-bone/50 sm:mr-2 sm:text-xs">
             Filter:
           </span>
           {genres.map((g) => (
             <button
               key={g}
               onClick={() => setGenreFilter(g)}
-              className={`rounded-full px-4 py-1.5 text-xs font-mono font-semibold transition-all duration-300 ${
+              className={`rounded-full px-3 py-1.5 text-[10px] font-mono font-semibold transition-all duration-300 sm:px-4 sm:text-xs ${
                 genreFilter.toLowerCase() === g.toLowerCase()
                   ? 'bg-bone text-ink shadow-[0_0_18px_rgba(255,255,255,0.4)]'
                   : 'border border-bone/20 bg-void/50 text-bone/70 hover:border-bone/50 hover:text-bone'
@@ -73,13 +71,13 @@ export default function Releases() {
               {g}
             </button>
           ))}
-          <span className="ml-auto text-xs font-mono text-bone/50">
-            SHOWING {filteredTracks.length} OF {tracks.length} TRACKS
+          <span className="ml-auto text-[10px] font-mono text-bone/50 sm:text-xs">
+            {filteredTracks.length} OF {tracks.length}
           </span>
         </div>
 
-        {/* 3D Perspective Card Showcase Grid */}
-        <div className="mt-12 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {/* Card Grid */}
+        <div className="mt-8 grid grid-cols-1 gap-5 sm:mt-12 sm:grid-cols-2 sm:gap-8 lg:grid-cols-3 xl:grid-cols-4">
           {filteredTracks.map((t) => {
             const originalIndex = tracks.findIndex((item) => item.id === t.id);
             const isSelected = p.i === originalIndex;
@@ -89,9 +87,9 @@ export default function Releases() {
               <div
                 key={t.id}
                 data-sel={isSelected}
-                className="group relative flex flex-col justify-between rounded-3xl border border-bone/15 bg-void/60 p-4 transition-all duration-500 hover:border-cyan/50 hover:shadow-[0_20px_60px_-15px_rgba(95,212,255,0.25)]"
+                className="group relative flex flex-col justify-between rounded-2xl border border-bone/15 bg-void/60 p-3 transition-all duration-500 hover:border-cyan/50 hover:shadow-[0_20px_60px_-15px_rgba(95,212,255,0.25)] sm:rounded-3xl sm:p-4"
               >
-                {/* Album Poster with 3D Tilt and Lighting Highlights */}
+                {/* Album Poster */}
                 <button
                   onClick={() =>
                     isPlaying ? p.toggle() : p.play(originalIndex)
@@ -99,7 +97,7 @@ export default function Releases() {
                   aria-label={`${isPlaying ? 'Pause' : 'Play'} ${t.title} by ${t.artist}`}
                   aria-pressed={isPlaying}
                   onPointerMove={lit}
-                  className="tilt relative block aspect-[4/5] w-full overflow-hidden rounded-2xl shadow-xl transition-transform duration-500 group-hover:scale-[1.02]"
+                  className="tilt relative block aspect-[4/5] w-full overflow-hidden rounded-xl shadow-xl transition-transform duration-500 group-hover:scale-[1.02] sm:rounded-2xl"
                 >
                   <Art
                     a={t.a}
@@ -126,7 +124,7 @@ export default function Releases() {
                         : 'bg-black/20 opacity-0 group-hover:opacity-100'
                     }`}
                   >
-                    <span className="grid h-16 w-16 place-items-center rounded-full bg-bone text-ink shadow-2xl transition-transform duration-300 group-hover:scale-110">
+                    <span className="grid h-12 w-12 place-items-center rounded-full bg-bone text-ink shadow-2xl transition-transform duration-300 group-hover:scale-110 sm:h-16 sm:w-16">
                       <Icon n={isPlaying ? 'pause' : 'play'} s={24} />
                     </span>
                   </span>

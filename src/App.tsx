@@ -1,29 +1,25 @@
 import { ThemeProvider } from './hooks/useTheme';
 import { PlayerProvider } from './hooks/usePlayer';
+import { UniversalPlayerProvider } from './hooks/useUniversalPlayer';
+import { VisualizerProvider } from './hooks/useVisualizer';
 import { UIProvider } from './hooks/useUI';
 import { usePointerTracking } from './hooks/motion';
 
 import AudioVisualizerBackground from './components/AudioVisualizerBackground';
-import CursorGlow from './components/CursorGlow';
-import CustomCursor from './components/CustomCursor';
-
 import Navbar from './components/Navbar';
-import MiniPlayer from './components/MiniPlayer';
+import UniversalPlayer from './components/UniversalPlayer';
+import FullPlayerModal from './components/FullPlayerModal';
 import Overlays from './components/Overlays';
 
 import Hero from './sections/Hero';
-import SynthSection from './sections/SynthSection';
-import RhythmSection from './sections/RhythmSection';
-import ModularSection from './sections/ModularSection';
-import TheorySection from './sections/TheorySection';
 import Featured from './sections/Featured';
 import Releases from './sections/Releases';
-import Artists from './sections/Artists';
-import Worlds from './sections/Worlds';
-import Immersive from './sections/Immersive';
-import Events from './sections/Events';
+import TheorySection from './sections/TheorySection';
+import CompositionSection from './sections/CompositionSection';
+import SampleLibrarySection from './sections/SampleLibrarySection';
+import LoopStudio from './sections/LoopStudio';
+import ServicesSection from './sections/ServicesSection';
 import About from './sections/About';
-import Stories from './sections/Stories';
 import Footer from './sections/Footer';
 
 export default function App() {
@@ -32,57 +28,65 @@ export default function App() {
   return (
     <ThemeProvider>
       <PlayerProvider>
-        <UIProvider>
-          {/* Audio-Reactive 2D Background Visualizer */}
-          <AudioVisualizerBackground />
+       <UniversalPlayerProvider>
+        <VisualizerProvider>
+          <UIProvider>
+            {/* Music-Synchronized Audio Visualizer (Halts completely when paused) */}
+            <AudioVisualizerBackground />
 
-          <CursorGlow />
-          <CustomCursor />
+            {/* Accessibility Skip Link */}
+            <a
+              href="#top"
+              className="sr-only z-[100] bg-bone px-4 py-2 text-ink focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
+            >
+              Skip to content
+            </a>
 
-          <a
-            href="#top"
-            className="sr-only z-[100] bg-bone px-4 py-2 text-ink focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
-          >
-            Skip to content
-          </a>
+            <Navbar />
 
-          <Navbar />
+            <main id="top" tabIndex={-1} className="relative z-10 w-full min-w-0">
+              {/* 1. Identity & Opening */}
+              <Hero />
 
-          <main id="top" tabIndex={-1} className="relative z-10 w-full overflow-x-clip">
-            {/* Scene 1 — Opening / AAK Music Identity */}
-            <Hero />
+              {/* 2. Flagship Release & Master Player */}
+              <Featured />
 
-            {/* Scene 2 — Synthesizer Experience */}
-            <SynthSection />
+              {/* 3. Complete Music Discography & Filtered Catalogue */}
+              <Releases />
 
-            {/* Scene 3 — Drum Machine & Rhythm */}
-            <RhythmSection />
+              {/* 4. Professional Music Theory & Interactive Chord Explorer */}
+              <TheorySection />
 
-            {/* Scene 4 — Modular Synthesizer / Sound Design */}
-            <ModularSection />
+              {/* 5. Electronic Music Composition & Arrangement Blueprint */}
+              <CompositionSection />
 
-            {/* Scene 5 — Music Theory Visualisation */}
-            <TheorySection />
+              {/* 6. EDM Sample Library & Sound Architecture */}
+              <SampleLibrarySection />
 
-            {/* Scene 6 — Featured Master Release & Full Discography */}
-            <Featured />
-            <Releases />
+              {/* 7. Browser-based sequencer and loop creation workspace */}
+              <LoopStudio />
 
-            {/* Rich Electronic Universe */}
-            <Artists />
-            <Worlds />
-            <Immersive />
-            <Events />
-            <About />
-            <Stories />
-          </main>
+              {/* 8. Artist Skills, Capabilities & Direct Booking Inquiry */}
+              <ServicesSection />
 
-          {/* Scene 7 — Closing Brand Finale */}
-          <Footer />
+              {/* 9. Artist Story & Brand Focus */}
+              <About />
+            </main>
 
-          <MiniPlayer />
-          <Overlays />
-        </UIProvider>
+            {/* 9. Brand Finale & Navigation Footer */}
+            <Footer />
+
+            {/* One shared dock for AAK releases and supported external audio */}
+            <UniversalPlayer />
+
+            {/* Dedicated Modern Full Player Modal App View */}
+            <FullPlayerModal />
+
+            {/* Overlays: Global Search & Dialogs */}
+            <Overlays />
+          </UIProvider>
+        </VisualizerProvider>
+       </UniversalPlayerProvider>
       </PlayerProvider>
     </ThemeProvider>
   );

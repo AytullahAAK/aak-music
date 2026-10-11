@@ -1,25 +1,3 @@
-export interface ExternalTrack {
-  id: string;
-  title: string;
-  artist: string;
-  album: string;
-  image: string;
-  durationSeconds: number;
-  streamUrl: string;
-  downloadUrl: string;
-  downloadAllowed: boolean;
-  trackUrl: string;
-  licenseUrl: string;
-  genres: string[];
-  provider: 'Jamendo';
-}
-
-export interface MusicSearchProvider {
-  id: string;
-  label: string;
-  search(query: string, signal?: AbortSignal): Promise<ExternalTrack[]>;
-}
-
 export interface AudioCatalogTrack {
   id: string;
   title: string;
@@ -29,8 +7,8 @@ export interface AudioCatalogTrack {
   durationSeconds: number | null;
   audioUrl: string;
   trackUrl: string;
-  provider: 'Jamendo' | 'Apple Music';
-  playbackKind: 'full stream' | 'preview';
+  provider: 'Apple Music' | 'iTunes Store';
+  playbackKind: 'preview' | 'subscription';
   genre?: string;
   releaseDate?: string;
   explicit?: boolean;
@@ -50,6 +28,8 @@ export interface AppleMusicResult {
   releaseDate: string;
   explicit: boolean;
   provider: 'Apple Music';
+  catalogSource: 'Apple Music' | 'iTunes Store';
+  playbackKind: 'preview' | 'subscription' | 'external only';
 }
 
 export interface YouTubeResult {
@@ -60,6 +40,7 @@ export interface YouTubeResult {
   durationSeconds: number | null;
   watchUrl: string;
   embeddable: boolean;
+  embeddingStatus?: 'allowed' | 'blocked' | 'unknown';
   provider: 'YouTube';
   audioVersion?: AudioCatalogTrack;
 }

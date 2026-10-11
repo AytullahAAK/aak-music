@@ -4,10 +4,26 @@ export interface SharedAudioBus {
   context: AudioContext;
   input: GainNode;
   analyser: AnalyserNode;
+  equalizer: BiquadFilterNode[];
 }
 
 let bus: SharedAudioBus | null = null;
 const activityTimers = new Map<string, number>();
+export type PlaybackOwner = 'none' | 'aak-local' | 'catalogue-audio' | 'apple-musickit' | 'youtube-iframe' | 'loop-studio' | 'generated-preview';
+let playbackOwner: PlaybackOwner = 'none';
+
+export function setPlaybackOwner(owner: PlaybackOwner) {
+  playbackOwner = owner;
+}
+
+export function claimPlayback(owner: PlaybackOwner) {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent<PlaybackOwner>('aak-playback-request', { detail: owner }));
+  playbackOwner = owner;
+}
+
+export function getPlaybackOwner() {
+  return playbackOwner;
+}
 
 export function getAudioBus(): SharedAudioBus | null {
   if (typeof window === 'undefined') return null;
@@ -17,7 +33,15 @@ export function getAudioBus(): SharedAudioBus | null {
     if (!AudioContextConstructor) return null;
     const context = new AudioContextConstructor();
     const input = context.createGain();
-    input.gain.value = 0.88;
+    input.gain.value = 0.78;
+    const equalizer = [60, 170, 350, 1000, 3500, 10000].map((frequency, index) => {
+      const filter = context.createBiquadFilter();
+      filter.type = index === 0 ? 'lowshelf' : index === 5 ? 'highshelf' : 'peaking';
+      filter.frequency.value = frequency;
+      filter.Q.value = index === 0 || index === 5 ? 0.7 : 0.9;
+      filter.gain.value = 0;
+      return filter;
+    });
     const compressor = context.createDynamicsCompressor();
     compressor.threshold.value = -9;
     compressor.knee.value = 12;
@@ -27,12 +51,23 @@ export function getAudioBus(): SharedAudioBus | null {
     const analyser = context.createAnalyser();
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0;
-    input.connect(compressor);
+    input.connect(equalizer[0]);
+    for (let index = 0; index < equalizer.length - 1; index++) equalizer[index].connect(equalizer[index + 1]);
+    equalizer[equalizer.length - 1].connect(compressor);
     compressor.connect(analyser);
     analyser.connect(context.destination);
-    bus = { context, input, analyser };
+    bus = { context, input, analyser, equalizer };
   }
   return bus;
+}
+
+export function setEqualizerBands(values: readonly number[]) {
+  const shared = getAudioBus();
+  if (!shared) return;
+  shared.equalizer.forEach((filter, index) => {
+    const gain = Math.max(-9, Math.min(9, values[index] || 0));
+    filter.gain.setTargetAtTime(gain, shared.context.currentTime, 0.025);
+  });
 }
 
 export async function resumeAudioBus() {
@@ -58,6 +93,7 @@ export function markAudioActivity(id: string, durationSeconds: number) {
   const timer = window.setTimeout(() => {
     activityTimers.delete(id);
     motion.playing = activityTimers.size > 0;
+    if (id === 'generated-preview' && playbackOwner === 'generated-preview') playbackOwner = 'none';
     window.dispatchEvent(new Event('aak-audio-activity'));
   }, Math.max(100, durationSeconds * 1000));
   activityTimers.set(id, timer);

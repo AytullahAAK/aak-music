@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/music", "destination": "/" },
+    { "source": "/player", "destination": "/" },
+    { "source": "/studio", "destination": "/" },
+    { "source": "/about", "destination": "/" }
+  ]
+}

@@ -7,6 +7,7 @@ import {
 } from '../utils/loopPatterns';
 import type { LaneId, LoopComposition, ScaleName } from '../utils/loopPatterns';
 import { fadeLoopAudio, prepareLoopAudio, scheduleLoopStep } from '../utils/loopAudio';
+import { claimPlayback, getPlaybackOwner, setPlaybackOwner } from '../utils/audioBus';
 
 const STORAGE_KEY = 'aak-loop-studio-project-v1';
 const panel = 'rounded-2xl border border-bone/10 bg-raised/45 p-4 sm:p-5';
@@ -22,6 +23,18 @@ export default function LoopStudio() {
   const compositionRef = useRef(composition);
   const playheadTimers = useRef(new Set<number>());
   compositionRef.current = composition;
+
+  useEffect(() => {
+    const stopForAnotherSource = (event: Event) => {
+      const owner = (event as CustomEvent<string>).detail;
+      if (owner === 'loop-studio' || !running) return;
+      setRunning(false);
+      setPlayhead(null);
+      fadeLoopAudio(true);
+    };
+    window.addEventListener('aak-playback-request', stopForAnotherSource);
+    return () => window.removeEventListener('aak-playback-request', stopForAnotherSource);
+  }, [running]);
 
   useEffect(() => {
     if (!running) return;
@@ -62,17 +75,20 @@ export default function LoopStudio() {
       for (const timer of playheadTimers.current) window.clearTimeout(timer);
       playheadTimers.current.clear();
       fadeLoopAudio(true);
+      if (getPlaybackOwner() === 'loop-studio') setPlaybackOwner('none');
     };
   }, [running]);
 
   const update = (next: (current: LoopComposition) => LoopComposition) => setComposition((current) => next(current));
   const start = async () => {
+    claimPlayback('loop-studio');
     try {
       await prepareLoopAudio();
       fadeLoopAudio(false);
       setAudioError('');
       setRunning(true);
     } catch (error) {
+      if (getPlaybackOwner() === 'loop-studio') setPlaybackOwner('none');
       setAudioError(error instanceof Error ? error.message : 'This browser could not start audio.');
     }
   };
@@ -80,6 +96,7 @@ export default function LoopStudio() {
     setRunning(false);
     setPlayhead(null);
     fadeLoopAudio(true);
+    if (getPlaybackOwner() === 'loop-studio') setPlaybackOwner('none');
   };
   const generate = () => {
     update((current) => generateLoop(current, current.seed + 1));

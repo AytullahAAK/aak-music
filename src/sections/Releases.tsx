@@ -30,7 +30,7 @@ export default function Releases() {
     <section id="music" className="relative min-h-[100svh] px-4 py-20 sm:px-6 md:px-12 md:py-36">
       <div className="mx-auto max-w-[1600px]">
         {/* Section Header */}
-        <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end md:gap-6">
+        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end lg:gap-6">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-cyan/30 bg-cyan/10 px-3 py-1 text-[10px] font-mono font-medium tracking-widest text-cyan sm:px-3.5 sm:text-xs">
               <span>AAK MUSIC CATALOGUE</span>

@@ -33,6 +33,7 @@ export default function AudioVisualizerBackground() {
     let dpr = 1;
     let raf = 0;
     let isLoopRunning = false;
+    let inlinePlayerVisible = false;
 
     // Smoothed visualizer values
     let smoothLevel = 0;
@@ -425,7 +426,7 @@ export default function AudioVisualizerBackground() {
     };
 
     const startLoop = () => {
-      if (isLoopRunning) return;
+      if (isLoopRunning || inlinePlayerVisible) return;
       isLoopRunning = true;
       lastTime = performance.now();
       readTheme();
@@ -463,13 +464,34 @@ export default function AudioVisualizerBackground() {
     };
     const onAudioActivity = () => {
       playingRef.current = motion.playing;
-      if (motion.playing && !document.hidden) startLoopRef.current?.();
+      if (motion.playing && !document.hidden && !inlinePlayerVisible) startLoopRef.current?.();
+    };
+    const onInlineVisualizer = (event: Event) => {
+      inlinePlayerVisible = Boolean((event as CustomEvent<boolean>).detail);
+      if (inlinePlayerVisible) stopLoop();
+      else if (motion.playing && !document.hidden) startLoopRef.current?.();
     };
 
     window.addEventListener('resize', onResize);
     window.visualViewport?.addEventListener('resize', onResize);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('aak-audio-activity', onAudioActivity);
+    window.addEventListener('aak-inline-visualizer-state', onInlineVisualizer);
+    const playerCanvas = document.querySelector('[data-aak-player-visualizer]');
+    if (playerCanvas && 'IntersectionObserver' in window) {
+      const observer = new IntersectionObserver(([entry]) => onInlineVisualizer(new CustomEvent('aak-inline-visualizer-state', { detail: Boolean(entry?.isIntersecting) })), { threshold: .12 });
+      observer.observe(playerCanvas);
+      return () => {
+        observer.disconnect();
+        stopLoop();
+        startLoopRef.current = null;
+        window.removeEventListener('resize', onResize);
+        window.visualViewport?.removeEventListener('resize', onResize);
+        document.removeEventListener('visibilitychange', onVisibility);
+        window.removeEventListener('aak-audio-activity', onAudioActivity);
+        window.removeEventListener('aak-inline-visualizer-state', onInlineVisualizer);
+      };
+    }
 
     return () => {
       stopLoop();
@@ -478,6 +500,7 @@ export default function AudioVisualizerBackground() {
       window.visualViewport?.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('aak-audio-activity', onAudioActivity);
+      window.removeEventListener('aak-inline-visualizer-state', onInlineVisualizer);
     };
   }, []);
 
@@ -491,7 +514,7 @@ export default function AudioVisualizerBackground() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed left-[var(--visual-viewport-left,0px)] top-[var(--visual-viewport-top,0px)] -z-10 h-[var(--visual-viewport-height,100dvh)] w-[var(--visual-viewport-width,100vw)] overflow-hidden"
+      className="pointer-events-none fixed left-[var(--visual-viewport-left,0px)] top-[var(--visual-viewport-top,0px)] z-0 h-[var(--visual-viewport-height,100dvh)] w-[var(--visual-viewport-width,100vw)] overflow-hidden"
     >
       {/* Elegant, clean static backdrop (active at all times without CPU overhead) */}
       <div

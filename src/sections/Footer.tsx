@@ -2,16 +2,17 @@ import { useState } from 'react';
 import { site } from '../data';
 import Logo from '../components/Logo';
 import Button from '../components/Button';
+import { RouteLink } from '../router';
 
 const nav = [
-  ['Home', '#top'],
-  ['Featured Release', '#player'],
-  ['Discography', '#music'],
-  ['Music Theory', '#theory'],
-  ['Composition Guide', '#composition'],
-  ['Sample Vault', '#samples'],
-  ['Artist Services', '#services'],
-  ['About AAK', '#about'],
+  ['Home', '/'],
+  ['Featured Release', '/player'],
+  ['Discography', '/music'],
+  ['Music Theory', '/#theory'],
+  ['Composition Guide', '/#composition'],
+  ['Sample Vault', '/#samples'],
+  ['Artist Services', '/about#services'],
+  ['About AAK', '/about#about'],
 ];
 
 export default function Footer() {
@@ -108,12 +109,12 @@ export default function Footer() {
             <ul className="grid grid-cols-2 gap-2 text-[10px] font-mono sm:gap-2.5 sm:text-xs">
               {nav.map(([n, h]) => (
                 <li key={n}>
-                  <a
-                    href={h}
+                  <RouteLink
+                    to={h}
                     className="text-bone/75 transition-colors hover:text-cyan"
                   >
                     {n}
-                  </a>
+                  </RouteLink>
                 </li>
               ))}
             </ul>
@@ -157,9 +158,9 @@ export default function Footer() {
 
         {/* Bottom Credits & Logo */}
         <div className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-bone/15 pt-6 md:mt-24 md:gap-6 md:pt-8">
-          <a href="#top" aria-label={`${site.brand.name} home`}>
+          <RouteLink to="/#top" aria-label={`${site.brand.name} home`}>
             <Logo className="h-8 md:h-14" />
-          </a>
+          </RouteLink>
 
           <div className="flex flex-wrap items-center gap-4 text-[10px] font-mono text-bone/50 sm:gap-6 sm:text-xs">
             <span>© {new Date().getFullYear()} {site.brand.name}. ALL RIGHTS RESERVED.</span>

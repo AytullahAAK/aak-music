@@ -2,26 +2,30 @@ import { useEffect, useRef, useState } from 'react';
 import { usePlayer } from '../hooks/usePlayer';
 import { useUI } from '../hooks/useUI';
 import { useVisualizer } from '../hooks/useVisualizer';
+import { useUniversalPlayerStatus } from '../hooks/useUniversalPlayer';
+import { RouteLink } from '../router';
 import { Eq } from './Icon';
 import Logo from './Logo';
 import ThemeToggle from './ThemeToggle';
 
 const navLinks = [
-  { name: 'Catalogue', href: '#music' },
-  { name: 'Theory', href: '#theory' },
-  { name: 'Composition', href: '#composition' },
-  { name: 'Sample Vault', href: '#samples' },
-  { name: 'Loop Studio', href: '#studio' },
-  { name: 'Services', href: '#services' },
-  { name: 'About', href: '#about' },
+  { name: 'Home', href: '/' },
+  { name: 'Music', href: '/music' },
+  { name: 'Player', href: '/player' },
+  { name: 'Loop Studio', href: '/studio' },
+  { name: 'Explore', href: '/#theory' },
+  { name: 'About', href: '/about' },
 ];
 
 export default function Navbar() {
   const p = usePlayer();
+  const universal = useUniversalPlayerStatus();
   const ui = useUI();
   const { style, nextStyle, quality, toggleQuality } = useVisualizer();
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
+  const currentTitle = universal.activeVideo?.title || universal.activeAudio?.title || p.track.title;
+  const currentPlaying = universal.activeVideo ? universal.videoPlaying : universal.activeAudio ? universal.playing : p.playing;
   const menuButton = useRef<HTMLButtonElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
 
@@ -89,20 +93,20 @@ export default function Navbar() {
           className="mx-auto flex max-w-[1600px] items-center justify-between px-4 sm:px-6 md:px-12"
         >
           {/* Logo */}
-          <a href="#top" aria-label="AAK Music home" className="flex items-center">
+          <RouteLink to="/#top" aria-label="AAK Music home" className="flex items-center">
             <Logo className="h-8 sm:h-10 md:h-12" />
-          </a>
+          </RouteLink>
 
           {/* Desktop Navigation Links */}
           <ul className="hidden items-center gap-5 text-xs font-mono tracking-wider uppercase text-bone/75 xl:flex xl:gap-7">
             {navLinks.map((l) => (
               <li key={l.name}>
-                <a
-                  href={l.href}
+                <RouteLink
+                  to={l.href}
                   className="transition hover:text-cyan hover:underline underline-offset-4"
                 >
                   {l.name}
-                </a>
+                </RouteLink>
               </li>
             ))}
           </ul>
@@ -131,13 +135,13 @@ export default function Navbar() {
             </button>
 
             {/* Quick Player Status */}
-            <a
-              href="#player"
+            <RouteLink
+              to="/player"
               className="hidden max-w-[10rem] items-center gap-2 truncate text-xs font-mono text-bone/75 transition hover:text-cyan xl:flex"
             >
-              <Eq on={p.playing} />
-              <span className="truncate">{p.track.title}</span>
-            </a>
+              <Eq on={currentPlaying} />
+              <span className="truncate">{currentTitle}</span>
+            </RouteLink>
 
             {/* Search Button */}
             <button
@@ -211,18 +215,18 @@ export default function Navbar() {
         <div onClick={(event) => event.stopPropagation()} className="mx-auto my-auto w-full max-w-2xl py-5">
         <div className="space-y-4 sm:space-y-5">
           {navLinks.map((l, i) => (
-            <a
+            <RouteLink
               key={l.name}
+              to={l.href}
               tabIndex={open ? 0 : -1}
               onClick={() => setOpen(false)}
-              href={l.href}
               style={{ transitionDelay: `${open ? i * 40 : 0}ms` }}
               className={`block font-display text-3xl font-extrabold transition duration-300 hover:text-cyan sm:text-4xl ${
                 open ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
               }`}
             >
               {l.name}
-            </a>
+            </RouteLink>
           ))}
         </div>
 

@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { tracks } from '../data';
 import { attachAnalyser } from './analyser';
-import { setAudioActivity } from '../utils/audioBus';
+import { claimPlayback, getPlaybackOwner, setAudioActivity, setPlaybackOwner, type PlaybackOwner } from '../utils/audioBus';
 import type { Track } from '../data';
 
 export type Status = 'idle' | 'loading' | 'ready' | 'error' | 'unavailable';
@@ -37,13 +37,16 @@ export interface PlayerContextType {
   toggleFavorite: (id: string) => void;
   isFavorite: (id: string) => boolean;
   setIsExpanded: (expanded: boolean) => void;
+  getAudioElement: () => HTMLAudioElement | null;
 }
 
 const Ctx = createContext<PlayerContextType>(null!);
 const TCtx = createContext<{ t: number; dur: number }>({ t: 0, dur: 0 });
+const ExpandedSetterContext = createContext<(expanded: boolean) => void>(() => {});
 
 export const usePlayer = () => useContext(Ctx);
 export const useTime = () => useContext(TCtx); // time lives in its own context so only the player UI re-renders 4x/s
+export const useSetPlayerExpanded = () => useContext(ExpandedSetterContext);
 
 export const fmt = (s: number) => {
   if (!Number.isFinite(s) || s < 0) return '0:00';
@@ -161,10 +164,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const a = au.current;
     if (!a) return;
     if (!want || !track.src) {
-      a.pause();
+      if (getPlaybackOwner() === 'aak-local') {
+        a.pause();
+        setPlaybackOwner('none');
+      }
       return;
     }
-    if (a.error) a.load();
+    if (getPlaybackOwner() !== 'aak-local') return;
+    if (a.src !== new URL(track.src, window.location.href).href) {
+      a.src = track.src;
+      a.load();
+    } else if (a.error) a.load();
     attachAnalyser(a);
     a.play().catch((e) => {
       if (e.name !== 'AbortError') {
@@ -184,15 +194,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setAudioActivity('main-player', playing);
   }, [playing]);
 
+  useEffect(() => {
+    const stopForAnotherSource = (event: Event) => {
+      const owner = (event as CustomEvent<PlaybackOwner>).detail;
+      if (owner === 'aak-local' || !want) return;
+      au.current?.pause();
+      setWant(false);
+      setAudioActivity('main-player', false);
+    };
+    window.addEventListener('aak-playback-request', stopForAnotherSource);
+    return () => window.removeEventListener('aak-playback-request', stopForAnotherSource);
+  }, [want]);
+
   const setVol = useCallback((v: number) => {
     const clamped = Math.max(0, Math.min(1, v));
     setVolState(clamped);
     if (au.current) au.current.volume = clamped;
   }, []);
 
+  const getAudioElement = useCallback(() => au.current, []);
+
   const play = useCallback(
     (n?: number) => {
-      if (typeof window !== 'undefined') window.dispatchEvent(new Event('aak-local-play-request'));
+      claimPlayback('aak-local');
       if (n === undefined || n === i) {
         setMedia((m) => (m === 'error' ? 'idle' : m));
         setWant(!!track.src);
@@ -242,6 +266,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setTime({ t: a.currentTime, dur: isFinite(a.duration) ? a.duration : 0 });
 
   const handleEnded = useCallback(() => {
+    if (!want) return;
     if (repeat === 'one') {
       const a = au.current;
       if (a) {
@@ -251,7 +276,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       return;
     }
     next();
-  }, [repeat, next]);
+  }, [repeat, next, want]);
 
   const v = useMemo<PlayerContextType>(
     () => ({
@@ -275,6 +300,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       toggleFavorite,
       isFavorite,
       setIsExpanded,
+      getAudioElement,
     }),
     [
       track,
@@ -297,23 +323,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       toggleFavorite,
       isFavorite,
       setIsExpanded,
+      getAudioElement,
     ]
   );
 
   return (
+    <ExpandedSetterContext.Provider value={setIsExpanded}>
     <Ctx.Provider value={v}>
       <TCtx.Provider value={time}>{children}</TCtx.Provider>
       <audio
         ref={au}
-        src={track.src}
-        preload="metadata"
-        onTimeUpdate={(e) => sync(e.currentTarget)}
-        onLoadedMetadata={(e) => sync(e.currentTarget)}
-        onWaiting={() => setMedia('loading')}
-        onCanPlay={() => setMedia('ready')}
-        onPlaying={() => setMedia('ready')}
+        className="sr-only"
+        aria-hidden="true"
+        preload="none"
+        onTimeUpdate={(e) => { if (want) sync(e.currentTarget); }}
+        onLoadedMetadata={(e) => { if (want) sync(e.currentTarget); }}
+        onWaiting={() => { if (want) setMedia('loading'); }}
+        onCanPlay={() => { if (want) setMedia('ready'); }}
+        onPlaying={() => { if (want) setMedia('ready'); }}
         onError={() => {
-          if (track.src) {
+          if (want && track.src) {
             setMedia('error');
             setWant(false);
           }
@@ -321,5 +350,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         onEnded={handleEnded}
       />
     </Ctx.Provider>
+    </ExpandedSetterContext.Provider>
   );
 }

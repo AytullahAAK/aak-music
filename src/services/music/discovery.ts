@@ -18,6 +18,12 @@ async function check(endpoint: string, signal?: AbortSignal) {
 
 export const checkYouTubeConfiguration = (signal?: AbortSignal) => check('/api/youtube-search', signal);
 export const checkAppleCatalog = (signal?: AbortSignal) => check('/api/itunes-search', signal);
+export const checkAppleMusicKitConfiguration = async (signal?: AbortSignal) => {
+  const response = await fetch('/api/apple-music-token?status=1', { signal });
+  if (!response.ok) return false;
+  const data = await response.json() as { configured?: boolean; originAllowed?: boolean };
+  return data.configured === true && data.originAllowed === true;
+};
 export const checkSpotifyConfiguration = (signal?: AbortSignal) => check('/api/spotify-search', signal);
 
 export const appleMusicProvider = {

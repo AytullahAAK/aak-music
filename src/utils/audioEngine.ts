@@ -1,9 +1,11 @@
 // Native Web Audio Synthesis Engine for interactive chord exploration and sample library auditioning.
 // Uses 0 external libraries, pure browser Web Audio API with zero latency.
-import { getAudioBus, markAudioActivity } from './audioBus';
+import { claimPlayback, getAudioBus, markAudioActivity } from './audioBus';
 
 function getContext(): AudioContext | null {
   const bus = getAudioBus();
+  if (!bus) return null;
+  claimPlayback('generated-preview');
   if (bus?.context.state === 'suspended') void bus.context.resume();
   return bus?.context ?? null;
 }

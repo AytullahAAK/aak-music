@@ -1,5 +1,5 @@
-import { lyricsStatus, transcribeLyrics } from '../server/lyrics';
-import { clientKey, consumeSearchLimit } from '../server/requestGuard';
+import { lyricsStatus, transcribeLyrics } from '../server/lyrics.js';
+import { clientKey, consumeSearchLimit } from '../server/requestGuard.js';
 
 type Request = { method?: string; url?: string; body?: unknown; headers?: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } };
 type Response = { setHeader: (key: string, value: string) => void; status: (code: number) => Response; json: (body: unknown) => void };

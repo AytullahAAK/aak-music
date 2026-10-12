@@ -45,6 +45,11 @@ export interface YouTubeResult {
   audioVersion?: AudioCatalogTrack;
 }
 
+export interface YouTubeSearchPage {
+  results: YouTubeResult[];
+  nextPageToken: string | null;
+}
+
 export interface SpotifyTrackResult {
   id: string;
   title: string;

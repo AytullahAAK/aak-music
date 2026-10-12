@@ -1,144 +1,835 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { tracks } from '../data';
-import Art from '../components/Art';
-import Icon from '../components/Icon';
-import Search from '../components/Search';
-import PlayerVisualizer from '../components/PlayerVisualizer';
-import VisualizerToolbar from '../components/VisualizerToolbar';
-import EqualizerControl from '../components/EqualizerControl';
-import LyricsAssistant from '../components/LyricsAssistant';
-import YouTubeVideoModal from '../components/YouTubeVideoModal';
+import { useEffect, useMemo, useState, memo } from 'react';
+import { tracks, type Track } from '../data';
+import Art from './Art';
+import Icon, { Eq } from './Icon';
+import Search from './Search';
+import PlayerVisualizer from './PlayerVisualizer';
+import VisualizerToolbar from './VisualizerToolbar';
+import EqualizerControl from './EqualizerControl';
+import LyricsAssistant from './LyricsAssistant';
 import { usePlayer, useTime, fmt, statusLabel } from '../hooks/usePlayer';
 import { useUniversalPlayer, useUniversalPlayerTime } from '../hooks/useUniversalPlayer';
-import { useUI } from '../hooks/useUI';
-import type { YouTubeResult } from '../services/music/types';
+import { getRecommendationsForTrack, type Recommendation, type PlayableItem } from '../services/music/recommendations';
 
-function PlaybackTimeline({ mode, fallbackDuration, onSeek, label }: { mode: 'local' | 'external' | 'video'; fallbackDuration: number; onSeek: (seconds: number) => void; label: string }) {
-  const localTime = useTime();
-  const sourceTime = useUniversalPlayerTime();
-  const player = useUniversalPlayer();
-  const current = mode === 'video' ? sourceTime.videoTime : mode === 'external' ? sourceTime.time : localTime.t;
-  const measuredDuration = mode === 'video' ? sourceTime.videoDuration : mode === 'external' ? sourceTime.duration : localTime.dur;
-  const duration = measuredDuration || fallbackDuration;
-  const canSeek = measuredDuration > 0 && (mode !== 'video' || player.videoReady);
-  return <div className="flex w-full min-w-0 items-center gap-3 text-[10px] font-mono tabular-nums text-bone/55">
-    <span>{fmt(current)}</span>
-    <input aria-label={label} type="range" min={0} max={duration || 1} step="any" value={Math.min(current, duration || 0)} disabled={!canSeek} onChange={(event) => onSeek(Number(event.target.value))} className="min-w-0 flex-1 accent-cyan disabled:opacity-35" />
-    <span>{fmt(duration)}</span>
-  </div>;
+function TimelineScrubber({
+  current,
+  duration,
+  canSeek,
+  onSeek,
+}: {
+  current: number;
+  duration: number;
+  canSeek: boolean;
+  onSeek: (seconds: number) => void;
+}) {
+  const percent = duration > 0 ? Math.min(100, Math.max(0, (current / duration) * 100)) : 0;
+
+  return (
+    <div className="w-full">
+      <div className="group relative flex h-6 w-full cursor-pointer items-center">
+        <div className="relative h-1.5 w-full rounded-full bg-bone/15 transition-all group-hover:h-2.5">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-cyan via-accent to-pink-500 shadow-[0_0_12px_rgba(95,212,255,0.5)] transition-all"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <input
+          aria-label="Seek track position"
+          type="range"
+          min={0}
+          max={duration || 1}
+          step={0.1}
+          value={Math.min(current, duration || 0)}
+          disabled={!canSeek}
+          onChange={(e) => onSeek(Number(e.target.value))}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-not-allowed"
+        />
+      </div>
+      <div className="mt-1 flex items-center justify-between font-mono text-[11px] tabular-nums text-bone/60">
+        <span>{fmt(current)}</span>
+        <span>{fmt(duration)}</span>
+      </div>
+    </div>
+  );
 }
 
-export default function UnifiedPlayerExperience() {
+function UnifiedPlayerExperience() {
   const local = usePlayer();
   const universal = useUniversalPlayer();
-  const ui = useUI();
-  const clock = useUniversalPlayerTime();
+  const universalTime = useUniversalPlayerTime();
+  const localTime = useTime();
+
+  const [activeTab, setActiveTab] = useState<'queue' | 'related' | 'search' | 'lyrics'>('queue');
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [loadingRecs, setLoadingRecs] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const currentItem = universal.currentItem;
   const external = universal.activeAudio;
   const video = universal.activeVideo;
   const videoMode = universal.videoMode;
-  const selected = local.track;
-  const title = video?.title || external?.title || selected.title;
-  const artist = video?.artist || external?.artist || selected.artist;
-  const image = video?.thumbnail || external?.image || selected.image;
+
+  const title = currentItem.title;
+  const artist = currentItem.artist;
+  const image = currentItem.image;
   const isVideo = Boolean(video && videoMode);
   const isVideoSelected = Boolean(video && !videoMode);
-  const isPlaying = isVideo ? universal.videoPlaying : external ? universal.playing : local.playing;
+
+  const isPlaying = isVideo
+    ? universal.videoPlaying
+    : external
+    ? universal.playing
+    : local.playing;
+
+  const currentSeconds = isVideo
+    ? universalTime.videoTime
+    : external
+    ? universalTime.time
+    : localTime.t;
+
+  const currentDuration = isVideo
+    ? universalTime.videoDuration || currentItem.durationSeconds
+    : external
+    ? universalTime.duration || currentItem.durationSeconds
+    : localTime.dur || currentItem.durationSeconds;
+
   const volume = video || external ? universal.volume : local.vol;
-  const repeat = external ? universal.repeat : local.repeat;
-  const shuffle = external ? universal.shuffle : local.shuffle;
-  const sourceStatus = video ? (videoMode ? 'YouTube · official embedded video' : 'YouTube · selected, not playing') : external ? `${external.provider} · ${external.playbackKind === 'preview' ? 'preview only' : external.playbackKind === 'subscription' ? 'subscriber playback' : 'audio'}` : statusLabel(local.status) || (isPlaying ? 'Playing full AAK release' : 'AAK Music library');
-  const currentIndex = useMemo(() => tracks.findIndex((track) => track.id === selected.id), [selected.id]);
-  const [queueOpen, setQueueOpen] = useState(false);
-  const [detailsTab, setDetailsTab] = useState<'info' | 'lyrics' | null>(null);
-  const isFav = local.isFavorite(selected.id);
-  const volumeRef = useRef(volume);
-  volumeRef.current = volume;
+  const repeat = video || external ? universal.repeat : local.repeat;
+  const shuffle = video || external ? universal.shuffle : local.shuffle;
+
+  const canSeek = isVideo
+    ? universal.videoMode && universal.videoReady && universalTime.videoDuration > 0
+    : external
+    ? universalTime.duration > 0
+    : Boolean(local.track.src && localTime.dur > 0);
+
+  const toggle = () => (isVideo ? universal.toggleVideo() : external ? universal.toggle() : local.toggle());
+  const previous = () => universal.prev();
+  const next = () => universal.next();
+  const seek = (seconds: number) =>
+    isVideo ? universal.seekVideo(seconds) : external ? universal.seek(seconds) : local.seek(seconds);
+
+  const setVolume = (value: number) =>
+    video ? universal.setVideoVolume(value) : external ? universal.setVolume(value) : local.setVol(value);
+
+  const toggleShuffle = () =>
+    video || external ? universal.setShuffle(!shuffle) : local.toggleShuffle();
+
+  const toggleRepeat = () =>
+    video || external
+      ? universal.setRepeat(repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off')
+      : local.toggleRepeat();
+
+  const isFavorite = local.isFavorite(currentItem.id);
+
+  // Fetch recommendations for current track
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoadingRecs(true);
+    getRecommendationsForTrack(currentItem, controller.signal)
+      .then((recs) => {
+        if (!controller.signal.aborted) {
+          setRecommendations(recs);
+          setLoadingRecs(false);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setLoadingRecs(false);
+      });
+    return () => controller.abort();
+  }, [currentItem.id, currentItem.kind]);
+
+  const notify = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2500);
+  };
+
+  const handleAddToQueue = (item: PlayableItem) => {
+    universal.addToUserQueue(item);
+    notify(`Added "${item.title}" to Up Next queue`);
+  };
+
   const lyricsContext = video
     ? { title: video.title, artist: video.artist, provider: 'YouTube', sourceUrl: video.watchUrl, sourceKind: 'third-party' as const }
     : external
-      ? { title: external.title, artist: external.artist, provider: external.provider, sourceUrl: external.trackUrl, sourceKind: 'third-party' as const }
-      : { title: selected.title, artist: selected.artist, provider: 'AAK Music', sourceKind: 'local' as const };
+    ? { title: external.title, artist: external.artist, provider: external.provider, sourceUrl: external.trackUrl, sourceKind: 'third-party' as const }
+    : { title: local.track.title, artist: local.track.artist, provider: 'AAK Music', sourceKind: 'local' as const };
 
-  const onVideoPlayback = useCallback((state: number, time: number, total: number) => universal.syncVideo(state, time, total), [universal.syncVideo]);
-  const onVideoController = useCallback((controller: Parameters<typeof universal.setVideoController>[0]) => {
-    universal.setVideoController(controller);
-    if (controller) controller.setVolume(volumeRef.current);
-  }, [universal.setVideoController]);
-  const onVideoError = useCallback((message: string) => universal.setError(message), [universal.setError]);
-  const toggle = () => isVideo ? universal.toggleVideo() : external ? universal.toggle() : local.toggle();
-  const previous = () => external ? universal.prev() : local.prev();
-  const next = () => external ? universal.next() : local.next();
-  const seek = (value: number) => isVideo ? universal.seekVideo(value) : external ? universal.seek(value) : local.seek(value);
-  const setVolume = (value: number) => video ? universal.setVideoVolume(value) : external ? universal.setVolume(value) : local.setVol(value);
-  const toggleShuffle = () => external ? universal.setShuffle(!shuffle) : local.toggleShuffle();
-  const toggleRepeat = () => external ? universal.setRepeat(repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off') : local.toggleRepeat();
-  const openVideo = (item: YouTubeResult) => universal.playVideo(item);
-  const mediaDuration = video?.durationSeconds || external?.durationSeconds || selected.dur;
+  const upcomingInContext = tracks.filter((t) => t.id !== currentItem.id);
 
-  return <section id="player" className="relative isolate px-4 py-8 sm:px-6 md:px-10 md:py-12">
-    <div className="mx-auto grid min-w-0 max-w-[1500px] items-start gap-6 xl:grid-cols-[minmax(0,.88fr)_minmax(0,1.12fr)] xl:gap-8">
-      <div className="min-w-0 xl:sticky xl:top-5">
-        <div className="mb-4"><p className="font-mono text-[10px] uppercase tracking-[.22em] text-cyan">AAK MUSIC · MAIN PLAYER</p><h2 className="mt-1 font-display text-2xl font-bold sm:text-3xl">Listen, search, and switch sources</h2></div>
-        <div className={`relative mx-auto w-full min-w-0 max-w-[760px] rounded-3xl border border-bone/10 bg-raised/25 shadow-xl ${isVideo ? 'overflow-visible' : 'aspect-square overflow-hidden'}`}>
-          {isVideo ? <div className="w-full rounded-3xl bg-black">
-            <div className="aspect-video min-h-[200px] w-full">
-              <YouTubeVideoModal inline video={video as YouTubeResult} onClose={universal.exitVideoMode} startSeconds={clock.videoTime} onPlayback={onVideoPlayback} onController={onVideoController} onError={onVideoError} />
+  return (
+    <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 md:px-8 md:py-10">
+      {/* Toast Banner */}
+      {toastMessage && (
+        <div className="fixed top-20 right-6 z-[160] flex items-center gap-2 rounded-xl border border-cyan/40 bg-ink/95 px-4 py-2.5 text-xs font-semibold text-cyan shadow-2xl backdrop-blur-xl animate-fade-in">
+          <span>✓</span>
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* HERO COMMAND STAGE */}
+      <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[400px_minmax(0,1fr)] xl:grid-cols-[440px_minmax(0,1fr)] xl:gap-12">
+        {/* LEFT COLUMN: ARTWORK & IDENTITY */}
+        <div className="min-w-0">
+          <div className="relative mx-auto aspect-square w-full max-w-[440px] overflow-hidden rounded-3xl border border-bone/15 bg-raised/30 shadow-[0_25px_60px_rgba(0,0,0,0.7)]">
+            {/* Ambient Backlight Glow */}
+            <div
+              className="absolute -inset-4 opacity-40 blur-2xl transition-opacity"
+              style={{
+                background: currentItem.kind === 'local'
+                  ? `radial-gradient(circle, hsl(${local.track.a}, 80%, 50%) 0%, transparent 70%)`
+                  : 'radial-gradient(circle, rgba(95,212,255,0.4) 0%, transparent 70%)',
+              }}
+              aria-hidden="true"
+            />
+
+            {isVideo ? (
+              <div
+                data-aak-youtube-player-slot
+                aria-label={`Official YouTube player: ${video?.title}`}
+                className="relative z-10 aspect-video h-full w-full bg-black"
+              />
+            ) : (
+              <>
+                {image ? (
+                  <img src={image} alt="" className="relative z-10 h-full w-full object-cover" />
+                ) : (
+                  <Art a={local.track.a} b={local.track.b} className="relative z-10 h-full w-full object-cover" />
+                )}
+                <div aria-hidden className="absolute inset-0 z-10 bg-gradient-to-t from-ink/85 via-transparent to-black/30" />
+              </>
+            )}
+
+            {/* Badges on Artwork */}
+            <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+              <span className="rounded-full border border-bone/20 bg-ink/80 px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-cyan backdrop-blur-md">
+                {isVideoSelected ? 'YouTube · Selected' : isPlaying ? 'Now Playing' : currentItem.provider}
+              </span>
             </div>
-          </div> : <>
-            {image ? <img src={image} alt={`${title} artwork`} loading="lazy" className="absolute inset-0 h-full w-full object-cover" /> : <Art a={selected.a} b={selected.b} className="absolute inset-0 h-full w-full object-cover" />}
-            <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-ink/90 via-ink/10 to-ink/5" />
-            <div className="absolute left-4 top-4 z-10 rounded-full border border-bone/15 bg-ink/85 px-3 py-1.5 font-mono text-[10px] text-cyan">{isVideoSelected ? 'YOUTUBE · SELECTED' : isPlaying ? 'NOW PLAYING' : sourceStatus.toUpperCase()}</div>
-            {!external && !video && <button type="button" onClick={() => local.toggleFavorite(selected.id)} aria-label={isFav ? 'Remove favorite' : 'Add favorite'} aria-pressed={isFav} className={`absolute right-4 top-4 z-10 grid h-11 w-11 place-items-center rounded-full border border-bone/15 bg-ink/80 text-lg ${isFav ? 'text-pink-400' : 'text-bone/80 hover:text-pink-300'}`}>{isFav ? '♥' : '♡'}</button>}
-            <div className="absolute inset-x-0 bottom-0 z-10 p-4 sm:p-6"><p className="text-[10px] font-mono uppercase tracking-widest text-cyan">{sourceStatus}</p><h3 className="mt-2 break-words font-display text-2xl font-extrabold leading-tight sm:text-4xl">{title}</h3><p className="mt-1 text-sm text-bone/75 sm:text-base">{artist}</p>{!external && !video && <span aria-hidden className="absolute bottom-4 right-5 font-display text-5xl font-black text-white/20 sm:text-7xl">{selected.bpm}</span>}</div>
-            {isVideoSelected && <div className="absolute inset-x-3 bottom-3 z-20 flex flex-wrap gap-2 sm:inset-x-5 sm:bottom-5">
-              <button type="button" disabled={!video?.embeddable} onClick={universal.enterVideoMode} className="min-h-11 rounded-full bg-cyan px-4 text-xs font-bold text-ink disabled:cursor-not-allowed disabled:opacity-50">{video?.embeddable ? 'Video Mode · official player' : 'Video embedding unavailable'}</button>
-              {video?.watchUrl && <a href={video.watchUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-full border border-white/25 bg-ink/85 px-4 text-xs font-semibold text-white hover:border-cyan">Open on YouTube ↗</a>}
-            </div>}
-          </>}
+
+            {/* Favorite button */}
+            {!video && currentItem.kind === 'local' && (
+              <button
+                type="button"
+                onClick={() => local.toggleFavorite(currentItem.id)}
+                aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                className={`absolute top-4 right-4 z-20 grid h-10 w-10 place-items-center rounded-full border border-bone/20 bg-ink/80 text-lg backdrop-blur-md transition hover:scale-110 active:scale-95 ${
+                  isFavorite ? 'text-pink-400' : 'text-bone/70 hover:text-pink-300'
+                }`}
+              >
+                <Icon n="heart" s={18} />
+              </button>
+            )}
+
+            {/* Video Mode Button when YouTube selected but in Audio Mode */}
+            {isVideoSelected && (
+              <div className="absolute inset-x-4 bottom-4 z-20 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  disabled={video?.embeddingStatus === 'blocked'}
+                  onClick={universal.enterVideoMode}
+                  className="min-h-11 rounded-full bg-cyan px-5 text-xs font-bold text-ink shadow-lg transition hover:brightness-110 disabled:opacity-50"
+                >
+                  {video?.embeddingStatus === 'blocked' ? 'Embedding Disabled' : 'Enter Official Video Mode'}
+                </button>
+                {video?.watchUrl && (
+                  <a
+                    href={video.watchUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-h-11 items-center rounded-full border border-white/20 bg-ink/90 px-4 text-xs font-semibold text-bone hover:border-cyan hover:text-cyan"
+                  >
+                    Open on YouTube ↗
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Track Typography & Details directly below Artwork */}
+          <div className="mt-5 space-y-2">
+            <h1 className="break-words font-display text-2xl font-extrabold text-bone sm:text-3xl lg:text-4xl">
+              {title}
+            </h1>
+            <p className="text-base font-medium text-bone/75 sm:text-lg">
+              {artist}
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+              <span className="rounded-lg border border-bone/15 bg-raised/50 px-2.5 py-1 font-mono text-[10px] text-cyan">
+                {currentItem.provider}
+              </span>
+              {currentItem.genre && (
+                <span className="rounded-lg border border-bone/15 bg-raised/50 px-2.5 py-1 font-mono text-[10px] text-bone/70">
+                  {currentItem.genre}
+                </span>
+              )}
+              {typeof currentItem.bpm === 'number' && currentItem.bpm > 0 && (
+                <span className="rounded-lg border border-bone/15 bg-raised/50 px-2.5 py-1 font-mono text-[10px] text-bone/70">
+                  {currentItem.bpm} BPM
+                </span>
+              )}
+              {currentItem.durationSeconds > 0 && (
+                <span className="rounded-lg border border-bone/15 bg-raised/50 px-2.5 py-1 font-mono text-[10px] text-bone/70">
+                  {fmt(currentDuration)}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="mt-3 grid min-w-0 grid-cols-2 gap-2 text-[10px] sm:grid-cols-3 sm:gap-3 sm:text-xs">
-          {[[video ? 'Provider' : external?.album ? 'Album' : 'Genre', video ? 'YouTube' : external?.album || selected.genre], ['Duration', external?.playbackKind === 'preview' ? 'Preview only' : fmt(mediaDuration)], ['Released', video ? 'Not provided' : external?.releaseDate?.slice(0, 10) || selected.date]].map(([label, value]) => <div key={label} className="min-w-0 rounded-xl border border-bone/10 bg-void/35 p-2.5 sm:p-3"><p className="font-mono text-bone/45">{label}</p><p className="mt-1 truncate font-semibold text-bone/80">{value}</p></div>)}
+
+        {/* RIGHT COLUMN: TRANSPORT CONTROLS & AUDIO VISUALIZER */}
+        <div className="min-w-0 space-y-6">
+          {/* AUDIO VISUALIZER CANVAS */}
+          <div className="relative overflow-hidden rounded-3xl border border-bone/12 bg-raised/20 p-4 shadow-xl backdrop-blur-xl">
+            <div className="flex items-center justify-between border-b border-bone/10 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-cyan">Live Spectrum</span>
+                {isPlaying && <Eq on={true} />}
+              </div>
+              <VisualizerToolbar embedded />
+            </div>
+            <div className="mt-3 h-24 w-full">
+              <PlayerVisualizer />
+            </div>
+          </div>
+
+          {/* MAIN PLAYBACK CONTROL CARD */}
+          <div className="rounded-3xl border border-bone/15 bg-ink/90 p-6 shadow-2xl backdrop-blur-2xl">
+            {/* Timeline Scrubber */}
+            <TimelineScrubber
+              current={currentSeconds}
+              duration={currentDuration}
+              canSeek={canSeek}
+              onSeek={seek}
+            />
+
+            {/* PRIMARY TRANSPORT BUTTONS (CENTER STAGE) */}
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3 sm:gap-5">
+              {/* Shuffle */}
+              <button
+                type="button"
+                onClick={toggleShuffle}
+                aria-label={shuffle ? 'Turn shuffle off' : 'Turn shuffle on'}
+                aria-pressed={shuffle}
+                className={`grid h-11 w-11 place-items-center rounded-full transition ${
+                  shuffle ? 'bg-cyan/15 text-cyan ring-1 ring-cyan/40' : 'text-bone/50 hover:bg-bone/10 hover:text-bone'
+                }`}
+                title="Shuffle"
+              >
+                <Icon n="shuffle" s={20} />
+              </button>
+
+              {/* Previous */}
+              <button
+                type="button"
+                onClick={previous}
+                aria-label="Previous track"
+                className="grid h-12 w-12 place-items-center rounded-full text-bone/80 transition hover:bg-bone/10 hover:text-cyan active:scale-95"
+                title="Previous Track"
+              >
+                <Icon n="prev" s={24} />
+              </button>
+
+              {/* Primary Play / Pause Button (Hero Circle) */}
+              <button
+                type="button"
+                onClick={toggle}
+                aria-label={isPlaying ? 'Pause' : 'Play'}
+                className="grid h-16 w-16 place-items-center rounded-full bg-bone text-ink shadow-[0_0_25px_rgba(255,255,255,0.25)] transition hover:bg-cyan hover:scale-105 active:scale-95"
+                title={isPlaying ? 'Pause' : 'Play'}
+              >
+                <Icon n={isPlaying ? 'pause' : 'play'} s={28} />
+              </button>
+
+              {/* Next */}
+              <button
+                type="button"
+                onClick={next}
+                aria-label="Next track"
+                className="grid h-12 w-12 place-items-center rounded-full text-bone/80 transition hover:bg-bone/10 hover:text-cyan active:scale-95"
+                title="Next Track"
+              >
+                <Icon n="next" s={24} />
+              </button>
+
+              {/* Repeat */}
+              <button
+                type="button"
+                onClick={toggleRepeat}
+                aria-label={`Repeat mode: ${repeat}`}
+                aria-pressed={repeat !== 'off'}
+                className={`relative grid h-11 w-11 place-items-center rounded-full transition ${
+                  repeat !== 'off' ? 'bg-cyan/15 text-cyan ring-1 ring-cyan/40' : 'text-bone/50 hover:bg-bone/10 hover:text-bone'
+                }`}
+                title={`Repeat: ${repeat}`}
+              >
+                <Icon n="repeat" s={20} />
+                {repeat === 'one' && (
+                  <span className="absolute bottom-1.5 right-1.5 text-[9px] font-bold">1</span>
+                )}
+              </button>
+            </div>
+
+            {/* SECONDARY UTILITY BAR */}
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-bone/10 pt-4">
+              {/* Volume Scrubber */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVolume(volume > 0.01 ? 0 : 0.85)}
+                  aria-label={volume <= 0.01 ? 'Unmute' : 'Mute'}
+                  className="grid h-8 w-8 place-items-center rounded text-bone/55 transition hover:text-cyan"
+                >
+                  <Icon n={volume <= 0.01 ? 'muted' : 'volume'} s={18} />
+                </button>
+                <input
+                  aria-label="Volume slider"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={volume}
+                  onChange={(e) => setVolume(Number(e.target.value))}
+                  className="h-1.5 w-24 cursor-pointer accent-cyan sm:w-28"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Equalizer */}
+                <EqualizerControl available={!external || external.playbackKind !== 'subscription'} />
+
+                {/* Video Mode Toggle if Available */}
+                {external?.videoVersion && (
+                  <button
+                    type="button"
+                    onClick={() => universal.playVideo(external.videoVersion!)}
+                    className="rounded-full border border-cyan/40 px-3 py-1.5 text-xs font-semibold text-cyan transition hover:bg-cyan/15"
+                  >
+                    Watch Video
+                  </button>
+                )}
+
+                {/* External Provider Link */}
+                {video?.watchUrl && (
+                  <a
+                    href={video.watchUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full border border-bone/15 px-3 py-1.5 text-xs text-bone/70 hover:border-cyan hover:text-cyan"
+                  >
+                    <span>YouTube</span>
+                    <Icon n="external" s={13} />
+                  </a>
+                )}
+                {external?.trackUrl && (
+                  <a
+                    href={external.trackUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-full border border-bone/15 px-3 py-1.5 text-xs text-bone/70 hover:border-cyan hover:text-cyan"
+                  >
+                    <span>{external.provider}</span>
+                    <Icon n="external" s={13} />
+                  </a>
+                )}
+
+                {/* Add to Up Next Queue button */}
+                <button
+                  type="button"
+                  onClick={() => handleAddToQueue(currentItem)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-bone/15 px-3 py-1.5 text-xs text-bone/80 transition hover:border-cyan hover:text-cyan"
+                >
+                  <Icon n="listPlus" s={14} />
+                  <span>+ Queue</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-        {isVideo && <div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="text-xs leading-5 text-bone/55">Official YouTube controls remain inside the full-size video frame.</p><button type="button" onClick={universal.exitVideoMode} className="min-h-10 rounded-full border border-bone/15 px-4 text-xs text-bone/70 hover:border-cyan hover:text-cyan">Return to artwork</button></div>}
       </div>
 
-      <div className="min-w-0 space-y-4">
-        <Search q="" embedded />
-        <section aria-label="Playback controls" className="min-w-0 rounded-3xl border border-bone/12 bg-ink/85 p-4 shadow-xl sm:p-6">
-          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-mono uppercase tracking-[.18em] text-cyan">UNIFIED PLAYBACK</p><h3 className="mt-1 break-words font-display text-xl font-bold sm:text-2xl">{title}</h3><p className="mt-1 break-words text-sm text-bone/65">{artist} · {sourceStatus}</p></div>{video?.watchUrl && <a href={video.watchUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-bone/15 px-3 text-xs text-bone/65 hover:border-cyan hover:text-cyan">Open on YouTube ↗</a>}{external?.trackUrl && <a href={external.trackUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-bone/15 px-3 text-xs text-bone/65 hover:border-cyan hover:text-cyan">Open {external.provider} ↗</a>}</div>
-          <div className="mt-4"><PlayerVisualizer /></div>
-          {(video || external?.playbackKind === 'subscription') && <p role="status" className="mt-2 text-[10px] leading-5 text-bone/50">Limited reactivity: {video ? 'YouTube’s official player does not expose audio samples to the AAK analyser.' : 'Apple MusicKit does not expose its audio samples to the AAK analyser.'} The visualizer is idle and the local equalizer is unavailable for this source.</p>}
-          {video && !videoMode && <div className="mt-4 rounded-2xl border border-bone/10 bg-void/35 p-4">
-            <p className="text-sm font-semibold">Audio Mode unavailable for this YouTube item</p><p className="mt-1 text-xs leading-5 text-bone/55">YouTube does not provide this site an authorized audio-only stream. This is a paused artwork selection; choose Video Mode to use the full official player, or search Apple Music, Spotify, or AAK for an authorized audio source.</p>
-            <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={!video.embeddable} onClick={universal.enterVideoMode} className="min-h-11 rounded-full bg-cyan px-4 text-xs font-bold text-ink disabled:opacity-45">{video.embeddable ? 'Enter Video Mode' : 'Embedding unavailable'}</button><button type="button" onClick={() => universal.closeVideo()} className="min-h-11 rounded-full border border-bone/15 px-4 text-xs text-bone/65 hover:border-cyan hover:text-cyan">Clear selection</button></div>
-          </div>}
-          {isVideo && <div className="mt-4 space-y-3"><PlaybackTimeline mode="video" fallbackDuration={video?.durationSeconds || 0} onSeek={seek} label="Seek YouTube video" /><div className="flex min-w-0 flex-wrap items-center gap-2"><button type="button" disabled={!universal.videoReady} onClick={toggle} aria-label={isPlaying ? 'Pause YouTube video' : 'Play YouTube video'} className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-bone text-ink hover:bg-cyan disabled:opacity-40"><Icon n={isPlaying ? 'pause' : 'play'} /></button><VisualizerToolbar embedded /><EqualizerControl available={false} /><label className="flex min-h-10 items-center gap-2 rounded-full border border-bone/10 px-3 text-[9px] font-mono text-bone/55"><span>VOL</span><input aria-label="YouTube player volume" type="range" min={0} max={1} step={0.01} value={volume} disabled={!universal.videoReady} onChange={(event) => setVolume(Number(event.target.value))} className="w-24 accent-cyan disabled:opacity-40" /></label></div>{universal.error && <p role="alert" className="text-xs leading-5 text-amber-100/80">{universal.error}</p>}</div>}
-          {!video && <>
-            <div className="mt-4"><PlaybackTimeline mode={external ? 'external' : 'local'} fallbackDuration={external?.durationSeconds || selected.dur} onSeek={seek} label="Seek track position" /></div>
-            <div className="mt-4 flex min-w-0 flex-wrap items-center justify-between gap-3">
-              <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
-                <button type="button" onClick={toggleShuffle} aria-label={shuffle ? 'Turn shuffle off' : 'Turn shuffle on'} aria-pressed={shuffle} className={`grid h-10 w-10 place-items-center rounded-full ${shuffle ? 'text-cyan' : 'text-bone/55 hover:text-bone'}`}>⇄</button>
-                <button type="button" onClick={previous} aria-label="Previous track" className="grid h-10 w-10 place-items-center rounded-full text-bone/75 hover:text-cyan"><Icon n="prev" /></button>
-                <button type="button" onClick={toggle} aria-label={isPlaying ? 'Pause' : 'Play'} className="grid h-14 w-14 place-items-center rounded-full bg-bone text-ink shadow-md transition hover:bg-cyan active:scale-95"><Icon n={isPlaying ? 'pause' : 'play'} s={22} /></button>
-                <button type="button" onClick={next} aria-label="Next track" className="grid h-10 w-10 place-items-center rounded-full text-bone/75 hover:text-cyan"><Icon n="next" /></button>
-                <button type="button" onClick={toggleRepeat} aria-label={`Repeat ${repeat}`} aria-pressed={repeat !== 'off'} className={`grid h-10 w-10 place-items-center rounded-full ${repeat !== 'off' ? 'text-cyan' : 'text-bone/55 hover:text-bone'}`}>⟳{repeat === 'one' && <span className="sr-only">one</span>}</button>
-                <VisualizerToolbar embedded /><EqualizerControl available={!external || external.playbackKind !== 'subscription'} />
+      {/* FEATURE TABS DECK (QUEUES, RELATED, SEARCH, LYRICS) */}
+      <div className="mt-12 rounded-3xl border border-bone/15 bg-ink/70 p-4 shadow-2xl backdrop-blur-2xl sm:p-6 md:p-8">
+        {/* TAB NAVIGATION */}
+        <div className="flex flex-wrap gap-2 border-b border-bone/10 pb-4" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'queue'}
+            onClick={() => setActiveTab('queue')}
+            className={`flex items-center gap-2 rounded-full px-5 py-2.5 font-mono text-xs font-bold uppercase tracking-wider transition ${
+              activeTab === 'queue'
+                ? 'bg-cyan text-ink shadow-md'
+                : 'border border-bone/15 text-bone/60 hover:border-cyan hover:text-bone'
+            }`}
+          >
+            <span>Up Next & Queue</span>
+            <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${activeTab === 'queue' ? 'bg-ink/20 text-ink' : 'bg-bone/10 text-cyan'}`}>
+              {universal.userQueue.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'related'}
+            onClick={() => setActiveTab('related')}
+            className={`flex items-center gap-2 rounded-full px-5 py-2.5 font-mono text-xs font-bold uppercase tracking-wider transition ${
+              activeTab === 'related'
+                ? 'bg-cyan text-ink shadow-md'
+                : 'border border-bone/15 text-bone/60 hover:border-cyan hover:text-bone'
+            }`}
+          >
+            <Icon n="sparkles" s={14} />
+            <span>Related Music</span>
+            {recommendations.length > 0 && (
+              <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${activeTab === 'related' ? 'bg-ink/20 text-ink' : 'bg-bone/10 text-cyan'}`}>
+                {recommendations.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'search'}
+            onClick={() => setActiveTab('search')}
+            className={`rounded-full px-5 py-2.5 font-mono text-xs font-bold uppercase tracking-wider transition ${
+              activeTab === 'search'
+                ? 'bg-cyan text-ink shadow-md'
+                : 'border border-bone/15 text-bone/60 hover:border-cyan hover:text-bone'
+            }`}
+          >
+            Universal Search
+          </button>
+
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'lyrics'}
+            onClick={() => setActiveTab('lyrics')}
+            className={`rounded-full px-5 py-2.5 font-mono text-xs font-bold uppercase tracking-wider transition ${
+              activeTab === 'lyrics'
+                ? 'bg-cyan text-ink shadow-md'
+                : 'border border-bone/15 text-bone/60 hover:border-cyan hover:text-bone'
+            }`}
+          >
+            Lyrics & Notes
+          </button>
+        </div>
+
+        {/* TAB PANELS */}
+        <div className="mt-6 min-h-[300px]">
+          {/* TAB 1: UP NEXT & QUEUE */}
+          {activeTab === 'queue' && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-display text-lg font-bold text-bone">Up Next Playback Order</h3>
+                  <p className="text-xs text-bone/55">
+                    User-queued tracks play first in priority order, followed by upcoming catalog tracks.
+                  </p>
+                </div>
+                {universal.userQueue.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => universal.clearUserQueue()}
+                    className="rounded-full border border-bone/15 px-4 py-1.5 text-xs font-mono text-bone/60 transition hover:border-amber-300 hover:text-amber-300"
+                  >
+                    Clear Up Next
+                  </button>
+                )}
               </div>
-              <div className="flex min-w-0 flex-wrap items-center gap-2"><label className="flex min-h-10 items-center gap-2 rounded-full border border-bone/10 px-3 text-[9px] font-mono text-bone/55"><span>VOL</span><input aria-label="Player volume" type="range" min={0} max={1} step={0.01} value={volume} onChange={(event) => setVolume(Number(event.target.value))} className="w-20 accent-cyan" /></label>{external?.videoVersion && <button type="button" onClick={() => openVideo(external.videoVersion as YouTubeResult)} className="min-h-10 rounded-full border border-cyan/30 px-3 text-xs text-cyan hover:bg-cyan/10">Video Mode</button>}{!external && <button type="button" onClick={() => ui.openSearch(`${selected.title} ${selected.artist}`)} className="min-h-10 rounded-full border border-bone/15 px-3 text-xs text-bone/65 hover:border-cyan hover:text-cyan">Find video</button>}
-                <button type="button" onClick={() => setDetailsTab((value) => value ? null : 'info')} aria-expanded={detailsTab !== null} className="min-h-10 rounded-full border border-bone/15 px-3 text-xs text-bone/65 hover:border-cyan hover:text-cyan">Track info & lyrics</button>
-                <button type="button" onClick={() => setQueueOpen((value) => !value)} aria-expanded={queueOpen} className="min-h-10 rounded-full border border-bone/15 px-3 text-xs text-bone/65 hover:border-cyan hover:text-cyan">Queue</button>
+
+              {/* USER QUEUE ITEMS */}
+              {universal.userQueue.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-bone/20 p-8 text-center">
+                  <p className="font-semibold text-sm text-bone/80">No tracks in your Up Next queue</p>
+                  <p className="mx-auto mt-1 max-w-md text-xs leading-5 text-bone/50">
+                    Use the "Related Music" tab or "Universal Search" to add tracks directly to your upcoming queue.
+                  </p>
+                  <div className="mt-4 flex justify-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('related')}
+                      className="rounded-full bg-cyan px-4 py-2 text-xs font-bold text-ink hover:brightness-110"
+                    >
+                      Browse Related Music
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('search')}
+                      className="rounded-full border border-bone/20 px-4 py-2 text-xs font-semibold text-bone hover:border-cyan hover:text-cyan"
+                    >
+                      Search All Music
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <ul className="space-y-2">
+                  {universal.userQueue.map((item, index) => (
+                    <li
+                      key={`${item.id}-${index}`}
+                      className="group flex items-center justify-between gap-3 rounded-2xl border border-bone/10 bg-raised/40 p-3 transition hover:border-bone/25 hover:bg-raised/70"
+                    >
+                      <div className="flex min-w-0 items-center gap-3.5">
+                        <span className="font-mono text-xs text-bone/40">{index + 1}</span>
+                        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-void shadow">
+                          {item.image ? (
+                            <img src={item.image} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <Art a={200} b={160} className="h-full w-full object-cover" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-bone group-hover:text-cyan">
+                            {item.title}
+                          </p>
+                          <p className="truncate text-xs text-bone/60">
+                            {item.artist} · <span className="font-mono text-cyan/70">{item.provider}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            universal.removeFromUserQueue(index);
+                            universal.playItem(item);
+                          }}
+                          className="grid h-9 w-9 place-items-center rounded-full bg-bone text-ink shadow transition hover:bg-cyan hover:scale-105 active:scale-95"
+                          title="Play Now"
+                        >
+                          <Icon n="play" s={16} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === 0}
+                          onClick={() => universal.moveUserQueueItem(index, index - 1)}
+                          aria-label={`Move ${item.title} up`}
+                          className="grid h-8 w-8 place-items-center rounded text-bone/50 transition hover:bg-bone/10 hover:text-bone disabled:opacity-20"
+                        >
+                          <Icon n="arrowUp" s={16} />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === universal.userQueue.length - 1}
+                          onClick={() => universal.moveUserQueueItem(index, index + 1)}
+                          aria-label={`Move ${item.title} down`}
+                          className="grid h-8 w-8 place-items-center rounded text-bone/50 transition hover:bg-bone/10 hover:text-bone disabled:opacity-20"
+                        >
+                          <Icon n="arrowDown" s={16} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => universal.removeFromUserQueue(index)}
+                          aria-label={`Remove ${item.title} from queue`}
+                          className="grid h-8 w-8 place-items-center rounded text-bone/50 transition hover:bg-amber-500/20 hover:text-amber-300"
+                        >
+                          <Icon n="close" s={16} />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* UPCOMING IN CATALOG */}
+              <div className="mt-8 border-t border-bone/10 pt-6">
+                <h4 className="font-mono text-xs uppercase tracking-widest text-bone/50">
+                  Upcoming in AAK Master Releases
+                </h4>
+                <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3">
+                  {upcomingInContext.slice(0, 6).map((track) => (
+                    <div
+                      key={track.id}
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-bone/10 bg-void/40 p-3 transition hover:border-bone/20 hover:bg-void/70"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Art a={track.a} b={track.b} image={track.image} className="h-11 w-11 shrink-0 rounded-xl object-cover" />
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-bone">{track.title}</p>
+                          <p className="truncate text-[10px] text-bone/55">{track.genre} · {track.bpm} BPM</p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => universal.playItem({
+                            kind: 'local',
+                            id: track.id,
+                            title: track.title,
+                            artist: track.artist,
+                            album: track.genre,
+                            genre: track.genre,
+                            bpm: track.bpm,
+                            image: track.image,
+                            durationSeconds: track.dur,
+                            provider: 'AAK Music',
+                            trackIndex: tracks.findIndex((t) => t.id === track.id),
+                            raw: track,
+                          })}
+                          className="grid h-8 w-8 place-items-center rounded-full bg-bone/10 text-bone hover:bg-cyan hover:text-ink"
+                          title="Play Track"
+                        >
+                          <Icon n="play" s={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddToQueue({
+                            kind: 'local',
+                            id: track.id,
+                            title: track.title,
+                            artist: track.artist,
+                            album: track.genre,
+                            genre: track.genre,
+                            bpm: track.bpm,
+                            image: track.image,
+                            durationSeconds: track.dur,
+                            provider: 'AAK Music',
+                            trackIndex: tracks.findIndex((t) => t.id === track.id),
+                            raw: track,
+                          })}
+                          className="rounded-full border border-bone/15 px-2.5 py-1 font-mono text-[10px] text-bone/70 hover:border-cyan hover:text-cyan"
+                        >
+                          + Queue
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-            {external?.playbackKind === 'preview' && clock.duration > 0 && <p className="mt-2 text-center text-[10px] text-bone/45">{external.provider} preview · {Math.round(clock.duration)} seconds playable; not a full track.</p>}
-          </>}
-          {detailsTab && <div className="mt-4 max-h-[min(60dvh,34rem)] overflow-y-auto overscroll-contain rounded-2xl border border-bone/10 bg-void/35 p-3 sm:p-4">
-            <div className="flex flex-wrap gap-2" role="tablist" aria-label="Track details"><button type="button" role="tab" aria-selected={detailsTab === 'info'} onClick={() => setDetailsTab('info')} className={`min-h-10 rounded-full px-4 text-[10px] font-mono ${detailsTab === 'info' ? 'bg-cyan text-ink' : 'border border-bone/10 text-bone/60'}`}>INFORMATION</button><button type="button" role="tab" aria-selected={detailsTab === 'lyrics'} onClick={() => setDetailsTab('lyrics')} className={`min-h-10 rounded-full px-4 text-[10px] font-mono ${detailsTab === 'lyrics' ? 'bg-cyan text-ink' : 'border border-bone/10 text-bone/60'}`}>LYRICS</button><button type="button" onClick={() => setDetailsTab(null)} aria-label="Close track information" className="ml-auto grid h-10 w-10 place-items-center rounded-full border border-bone/10 text-bone/65 hover:text-bone">×</button></div>
-            {detailsTab === 'info' ? <div role="tabpanel" className="mt-3 text-xs leading-6 text-bone/65"><p><strong>{title}</strong> · {artist}</p><p>{video ? 'YouTube · official video listing' : external ? `${external.provider} · ${external.playbackKind === 'preview' ? 'preview audio' : external.playbackKind === 'subscription' ? 'subscriber playback' : 'catalog item'}` : `AAK Music · ${selected.genre} · ${selected.bpm} BPM · ${selected.date}`}{external?.album && ` · ${external.album}`}{external?.releaseDate && ` · ${external.releaseDate}`}{external?.explicit && ' · Explicit'}</p>{video?.watchUrl && <a href={video.watchUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center text-cyan underline underline-offset-2">Open official YouTube page ↗</a>}{external?.trackUrl && <a href={external.trackUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center text-cyan underline underline-offset-2">Open original provider page ↗</a>}</div> : <div role="tabpanel" className="mt-3"><LyricsAssistant context={lyricsContext} /></div>}
-          </div>}
-          {queueOpen && !video && <div role="region" aria-label="Playback queue" className="mt-4 max-h-[min(45dvh,20rem)] overflow-y-auto overscroll-contain rounded-2xl border border-bone/10 bg-void/35 p-2">{external ? universal.queue.map((item, index) => <button type="button" key={`${item.provider}:${item.id}`} onClick={() => universal.playQueued(index)} className={`flex min-h-12 w-full items-center justify-between gap-2 rounded-lg px-2 text-left text-xs ${index === universal.queueIndex ? 'bg-cyan/10 text-cyan' : 'hover:bg-bone/5'}`}><span className="min-w-0 truncate">{item.title} · {item.artist}</span><span className="shrink-0 text-[10px] text-bone/45">{item.provider}</span></button>) : tracks.map((item, index) => <button type="button" key={item.id} onClick={() => local.play(index)} className={`flex min-h-12 w-full items-center justify-between gap-2 rounded-lg px-2 text-left text-xs ${index === currentIndex ? 'bg-cyan/10 text-cyan' : 'hover:bg-bone/5'}`}><span className="min-w-0 truncate">{index + 1}. {item.title}</span><span className="shrink-0 text-[10px] text-bone/45">{fmt(item.dur)}</span></button>)}</div>}
-          {universal.error && !video && external && <p role="alert" className="mt-3 text-xs text-amber-100/80">{universal.error}</p>}
-        </section>
+          )}
+
+          {/* TAB 2: RELATED MUSIC DISCOVERY */}
+          {activeTab === 'related' && (
+            <div className="space-y-6">
+              <div>
+                <h3 className="font-display text-lg font-bold text-bone">Intelligent Related Music</h3>
+                <p className="text-xs text-bone/55">
+                  Curated recommendations based on matching tempo ({currentItem.bpm} BPM), genre ({currentItem.genre}), and artist catalog for "{title}".
+                </p>
+              </div>
+
+              {loadingRecs ? (
+                <div className="py-12 text-center space-y-3">
+                  <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-cyan border-t-transparent" />
+                  <p className="text-xs text-bone/50">Analyzing audio parameters & discovering related music…</p>
+                </div>
+              ) : recommendations.length === 0 ? (
+                <div className="rounded-2xl border border-bone/15 p-8 text-center text-xs text-bone/55">
+                  No additional related music found for this specific track.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {recommendations.map(({ item, reason, badge }, idx) => (
+                    <div
+                      key={`${item.id}-${idx}`}
+                      className="group flex items-center justify-between gap-3.5 rounded-2xl border border-bone/10 bg-raised/35 p-3.5 transition hover:border-bone/25 hover:bg-raised/60"
+                    >
+                      <div className="flex min-w-0 items-center gap-3.5">
+                        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-void shadow">
+                          {item.image ? (
+                            <img src={item.image} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <Art a={240} b={190} className="h-full w-full object-cover" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-bone group-hover:text-cyan">
+                            {item.title}
+                          </p>
+                          <p className="truncate text-xs text-bone/60">{item.artist}</p>
+                          <span className="mt-1 inline-block rounded bg-cyan/15 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-cyan">
+                            {badge} · {reason}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => universal.playItem(item)}
+                          className="grid h-9 w-9 place-items-center rounded-full bg-bone text-ink shadow transition hover:bg-cyan hover:scale-105 active:scale-95"
+                          title="Play Now"
+                        >
+                          <Icon n="play" s={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddToQueue(item)}
+                          className="rounded-full border border-bone/15 px-3 py-1.5 font-mono text-[11px] text-bone/80 transition hover:border-cyan hover:text-cyan"
+                        >
+                          + Queue
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: UNIVERSAL SEARCH */}
+          {activeTab === 'search' && (
+            <div className="space-y-4">
+              <Search q="" embedded />
+            </div>
+          )}
+
+          {/* TAB 4: LYRICS & NOTES */}
+          {activeTab === 'lyrics' && (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <section aria-label="Track Information" className="rounded-2xl border border-bone/10 bg-raised/30 p-5">
+                <h4 className="font-mono text-xs uppercase tracking-wider text-cyan">Audio Specifications</h4>
+                <div className="mt-4 space-y-3 text-xs leading-6 text-bone/70">
+                  <p><strong>Title:</strong> {title}</p>
+                  <p><strong>Artist:</strong> {artist} (Ayatullah Al Khomeini)</p>
+                  <p><strong>Provider:</strong> {currentItem.provider}</p>
+                  {currentItem.genre && <p><strong>Genre:</strong> {currentItem.genre}</p>}
+                  {typeof currentItem.bpm === 'number' && currentItem.bpm > 0 && <p><strong>BPM:</strong> {currentItem.bpm}</p>}
+                  {currentItem.durationSeconds > 0 && <p><strong>Duration:</strong> {fmt(currentDuration)}</p>}
+                  {currentItem.kind === 'local' && (
+                    <p className="text-cyan font-mono text-[11px]">
+                      Master Release: High-Definition 24-Bit / 96kHz Local Master
+                    </p>
+                  )}
+                  {video?.watchUrl && (
+                    <a
+                      href={video.watchUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block pt-2 text-cyan underline underline-offset-2 hover:text-bone"
+                    >
+                      Open Official YouTube Page ↗
+                    </a>
+                  )}
+                  {external?.trackUrl && (
+                    <a
+                      href={external.trackUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block pt-2 text-cyan underline underline-offset-2 hover:text-bone"
+                    >
+                      Open Original {external.provider} Listing ↗
+                    </a>
+                  )}
+                </div>
+              </section>
+
+              <section aria-label="Lyrics & Vocal Notes" className="rounded-2xl border border-bone/10 bg-raised/30 p-5">
+                <LyricsAssistant context={lyricsContext} />
+              </section>
+            </div>
+          )}
+        </div>
       </div>
     </div>
-  </section>;
+  );
 }
+
+export default memo(UnifiedPlayerExperience);

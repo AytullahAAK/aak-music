@@ -21,7 +21,11 @@ interface SpotifyTrackResult {
 
 let spotifyToken: { value: string; expiresAt: number } | null = null;
 const spotifySearchCache = new Map<string, { expiresAt: number; results: SpotifyTrackResult[] }>();
-const youtubeSearchCache = new Map<string, { expiresAt: number; results: unknown[] }>();
+interface YouTubeResultPage {
+  results: unknown[];
+  nextPageToken: string | null;
+}
+const youtubeSearchCache = new Map<string, { expiresAt: number; page: YouTubeResultPage }>();
 const appleSearchCache = new Map<string, { expiresAt: number; results: unknown[] }>();
 
 const cappedQuery = (url: URL) => (url.searchParams.get('q') || '').trim().slice(0, 100);
@@ -98,23 +102,31 @@ export async function youtubeSearch(url: URL, env: Env): Promise<ProviderRespons
   if (!key) return { statusCode: 503, body: { error: 'YouTube search is not configured on this server.' } };
 
   const query = cappedQuery(url);
-  if (query.length < 2) return { statusCode: 200, body: { results: [] } };
-  const cacheKey = query.toLocaleLowerCase();
+  if (query.length < 2) return { statusCode: 200, body: { results: [], nextPageToken: null } };
+  const pageToken = (url.searchParams.get('pageToken') || '').trim().slice(0, 512);
+  const requestedSize = Number.parseInt(url.searchParams.get('maxResults') || '25', 10);
+  const maxResults = Number.isFinite(requestedSize) ? Math.min(50, Math.max(1, requestedSize)) : 25;
+  const cacheKey = `${query.toLocaleLowerCase()}:${pageToken}:${maxResults}`;
   const cached = youtubeSearchCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return { statusCode: 200, body: { results: cached.results } };
+  if (cached && cached.expiresAt > Date.now()) return { statusCode: 200, body: cached.page };
 
   const searchParams = new URLSearchParams({
     key,
     part: 'snippet',
     type: 'video',
-    maxResults: '8',
+    maxResults: String(maxResults),
     q: query,
   });
+  if (pageToken) searchParams.set('pageToken', pageToken);
 
   try {
     const searchResponse = await upstreamFetch(`https://www.googleapis.com/youtube/v3/search?${searchParams}`);
-    if (!searchResponse.ok) return { statusCode: searchResponse.status === 429 ? 429 : 502, body: { error: await providerError(searchResponse, 'YouTube search') } };
-    const searchData = await searchResponse.json() as { items?: YouTubeSearchItem[] };
+    if (!searchResponse.ok) {
+      const message = await providerError(searchResponse, 'YouTube search');
+      const quotaError = /quota|daily api quota/i.test(message);
+      return { statusCode: searchResponse.status === 429 || quotaError ? 429 : 502, body: { error: message } };
+    }
+    const searchData = await searchResponse.json() as { items?: YouTubeSearchItem[]; nextPageToken?: string };
     const candidates = (searchData.items || []).flatMap((item) => {
       const id = item.id?.videoId;
       const title = item.snippet?.title;
@@ -128,8 +140,9 @@ export async function youtubeSearch(url: URL, env: Env): Promise<ProviderRespons
     });
 
     if (!candidates.length) {
-      cacheResults(youtubeSearchCache, cacheKey, []);
-      return { statusCode: 200, body: { results: [] } };
+      const page = { results: [], nextPageToken: searchData.nextPageToken || null };
+      youtubeSearchCache.set(cacheKey, { expiresAt: Date.now() + 120_000, page });
+      return { statusCode: 200, body: page };
     }
 
     const detailParams = new URLSearchParams({ key, part: 'contentDetails,status', id: candidates.map(({ id }) => id).join(',') });
@@ -154,8 +167,13 @@ export async function youtubeSearch(url: URL, env: Env): Promise<ProviderRespons
         provider: 'YouTube',
       }];
     });
-    cacheResults(youtubeSearchCache, cacheKey, results);
-    return { statusCode: 200, body: { results } };
+    const page = { results, nextPageToken: searchData.nextPageToken || null };
+    youtubeSearchCache.set(cacheKey, { expiresAt: Date.now() + 120_000, page });
+    if (youtubeSearchCache.size > 100) {
+      const oldest = youtubeSearchCache.keys().next().value as string | undefined;
+      if (oldest) youtubeSearchCache.delete(oldest);
+    }
+    return { statusCode: 200, body: page };
   } catch {
     return { statusCode: 502, body: { error: 'Could not reach YouTube. Check the server network and try again.' } };
   }

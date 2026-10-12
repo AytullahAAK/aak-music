@@ -73,4 +73,22 @@ section[id]{scroll-margin-top:4.5rem}
   .mobile-player-safe a{margin-right:2px}
 }
 
+main.youtube-player-dock-main{padding-bottom:max(26rem,calc(25rem + env(safe-area-inset-bottom)))}
+@media(min-width:640px){main.youtube-player-dock-main{padding-bottom:28rem}}
+.youtube-player-host iframe{display:block;width:100%!important;height:100%!important;max-width:none}
+.youtube-mini-dock{right:max(1rem,env(safe-area-inset-right));bottom:max(1rem,env(safe-area-inset-bottom));width:min(24rem,calc(100vw - 2rem));box-sizing:border-box;overflow:visible;border-radius:1rem;padding-bottom:.25rem}
+.youtube-mini-dock [data-aak-youtube-player-slot]{width:100%;max-width:300px;min-height:200px;border-radius:1rem 1rem 0 0}
+@media(max-width:639px){.youtube-mini-dock{right:max(.5rem,env(safe-area-inset-right));bottom:max(.5rem,env(safe-area-inset-bottom));width:min(25rem,calc(100vw - 1rem))}.youtube-mini-dock [data-aak-youtube-player-slot]{max-width:min(300px,100%)}}
+.youtube-mini-grid{display:flex!important;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.25rem .5rem;padding:.4rem .65rem .35rem!important}
+.youtube-mini-info{flex:1 1 7rem;min-width:0;gap:.45rem!important}
+.youtube-mini-info img{width:3rem;height:2.25rem}
+.youtube-mini-controls{flex:0 1 auto;justify-content:flex-end!important;gap:.1rem!important}
+.youtube-mini-controls>button{height:2.25rem;width:2.25rem}
+.youtube-mini-controls>button[aria-label="Play"],.youtube-mini-controls>button[aria-label="Pause"]{height:2.5rem;width:2.5rem}
+.youtube-mini-meta{display:flex!important;flex:1 1 100%;flex-wrap:wrap;align-items:center;gap:.25rem .5rem;border-top:1px solid rgb(var(--fg)/.1);padding-top:.25rem!important}
+.youtube-mini-progress{width:auto!important;min-width:8rem;flex:1 1 9rem;gap:.35rem!important}
+.youtube-mini-seek{width:auto!important;min-width:3.5rem!important;max-width:none!important;flex:1 1 auto}
+.youtube-mini-links{width:auto!important;min-width:0;flex:0 1 auto;gap:.1rem!important}
+.youtube-mini-links>button,.youtube-mini-links>a{min-height:2.25rem!important}
+
 

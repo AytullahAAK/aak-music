@@ -67,7 +67,7 @@ function errorText(code: number) {
   return 'YouTube could not play this video here. Open it on YouTube instead.';
 }
 
-export default function YouTubeVideoModal({ video, onClose, onPlayAudio, inline = false, startSeconds = 0, onPlayback, onController, onError }: { video: YouTubeResult; onClose: () => void; onPlayAudio?: () => void; inline?: boolean; startSeconds?: number; onPlayback?: (state: number, currentTime: number, duration: number) => void; onController?: (controller: { playVideo: () => void; pauseVideo: () => void; seekTo: (seconds: number) => void; setVolume: (volume: number) => void } | null) => void; onError?: (message: string) => void }) {
+export default function YouTubeVideoModal({ video, onClose, onPlayAudio, inline = false, autoPlay = false, startSeconds = 0, onPlayback, onController, onError }: { video: YouTubeResult; onClose: () => void; onPlayAudio?: () => void; inline?: boolean; autoPlay?: boolean; startSeconds?: number; onPlayback?: (state: number, currentTime: number, duration: number) => void; onController?: (controller: { playVideo: () => void; pauseVideo: () => void; seekTo: (seconds: number) => void; setVolume: (volume: number) => void } | null) => void; onError?: (message: string) => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YouTubePlayerApi | null>(null);
@@ -96,7 +96,7 @@ export default function YouTubeVideoModal({ video, onClose, onPlayAudio, inline 
         width: '100%',
         height: '100%',
         videoId: video.id,
-        playerVars: { controls: 1, playsinline: 1, rel: 0, origin: window.location.origin },
+        playerVars: { controls: 1, playsinline: 1, rel: 0, origin: window.location.origin, autoplay: autoPlay ? 1 : 0 },
         events: {
           onReady: ({ target }) => {
             const iframe = target.getIframe();
@@ -106,13 +106,14 @@ export default function YouTubeVideoModal({ video, onClose, onPlayAudio, inline 
             onController?.({ playVideo: () => target.playVideo(), pauseVideo: () => target.pauseVideo(), seekTo: (seconds) => target.seekTo(seconds, true), setVolume: (volume) => target.setVolume(Math.round(volume * 100)) });
             if (startSeconds > 0) target.seekTo(startSeconds, true);
             onPlayback?.(target.getPlayerState(), target.getCurrentTime(), target.getDuration());
+            if (autoPlay) target.playVideo();
             pollRef.current = window.setInterval(() => {
               const state = target.getPlayerState();
               if (state === 1) onPlayback?.(state, target.getCurrentTime(), target.getDuration());
             }, 500);
           },
           onStateChange: ({ data, target }) => onPlayback?.(data, target.getCurrentTime(), target.getDuration()),
-          onError: ({ data }) => { const message = errorText(data); setPlayerError(message); onError?.(message); onPlayback?.(0, 0, 0); },
+          onError: ({ data }) => { const message = errorText(data); setPlayerError(message); onError?.(message); onPlayback?.(2, 0, 0); },
         },
       });
     }).catch((error: unknown) => {
@@ -130,7 +131,7 @@ export default function YouTubeVideoModal({ video, onClose, onPlayAudio, inline 
       playerRef.current?.destroy();
       playerRef.current = null;
     };
-  }, [video.id, video.title, onController, onPlayback, onError]);
+  }, [video.id, video.title, autoPlay, onController, onPlayback, onError]);
 
   if (inline) return <div className="relative h-full min-h-[200px] w-full min-w-0 bg-black" aria-label={`YouTube video: ${video.title}`}>
     <div ref={mountRef} className="absolute inset-0 h-full w-full" />

@@ -1,12 +1,12 @@
-import { itunesSearch } from '../server/discovery';
-import { appleCatalogSearch, appleMusicConfigured } from '../server/appleMusic';
-import { clientKey, consumeSearchLimit } from '../server/requestGuard';
+import { itunesSearch } from '../server/discovery.js';
+import { appleCatalogSearch, appleMusicConfigured } from '../server/appleMusic.js';
+import { clientKey, consumeSearchLimit } from '../server/requestGuard.js';
 
 type Request = { method?: string; url?: string; headers?: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } };
 type Response = { setHeader: (key: string, value: string) => void; status: (code: number) => Response; json: (body: unknown) => void };
-const env = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env || {};
 
 export default async function handler(req: Request, res: Response) {
+  const env = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env || {};
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Use GET for Apple Music catalog search.' });
   const url = new URL(req.url || '/', 'https://aak-music.local');

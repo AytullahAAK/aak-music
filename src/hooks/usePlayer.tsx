@@ -26,6 +26,7 @@ export interface PlayerContextType {
   repeat: RepeatMode;
   favorites: string[];
   isExpanded: boolean;
+  hasInitiatedPlayback: boolean;
   play: (i?: number) => void;
   toggle: () => void;
   next: () => void;
@@ -76,6 +77,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // Full Screen Player Expanded state
   const [isExpanded, setIsExpanded] = useState(false);
+  const [hasInitiatedPlayback, setHasInitiatedPlayback] = useState(false);
 
   // Favorites state persisted in localStorage
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -216,6 +218,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const play = useCallback(
     (n?: number) => {
+      setHasInitiatedPlayback(true);
       claimPlayback('aak-local');
       if (n === undefined || n === i) {
         setMedia((m) => (m === 'error' ? 'idle' : m));
@@ -289,6 +292,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       repeat,
       favorites,
       isExpanded,
+      hasInitiatedPlayback,
       play,
       toggle,
       next,
@@ -312,6 +316,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       repeat,
       favorites,
       isExpanded,
+      hasInitiatedPlayback,
       play,
       toggle,
       next,

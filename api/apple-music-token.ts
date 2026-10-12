@@ -1,10 +1,11 @@
-import { appleDeveloperToken, appleMusicConfigured, appleMusicOriginAllowed } from '../server/appleMusic';
+import { appleDeveloperToken, appleMusicConfigured, appleMusicOriginAllowed } from '../server/appleMusic.js';
 
-type Request = { method?: string; headers?: Record<string, string | string[] | undefined> };
+type Request = { method?: string; url?: string; headers?: Record<string, string | string[] | undefined> };
 type Response = { setHeader: (key: string, value: string) => void; status: (code: number) => Response; json: (body: unknown) => void };
-const env = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env || {};
 
 export default async function handler(req: Request, res: Response) {
+  // Read env at request time — Vercel injects variables into the process before each invocation.
+  const env = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env || {};
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Use GET for Apple MusicKit configuration.' });
   const originHeader = req.headers?.origin;
@@ -26,4 +27,3 @@ export default async function handler(req: Request, res: Response) {
     return res.status(500).json({ error: 'Apple MusicKit could not sign a developer token. Check the server key configuration.' });
   }
 }
-

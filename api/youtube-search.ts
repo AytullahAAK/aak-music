@@ -1,10 +1,8 @@
-import { youtubeSearch } from '../server/discovery';
-import { clientKey, consumeSearchLimit } from '../server/requestGuard';
+import { youtubeSearch } from '../server/discovery.js';
+import { clientKey, consumeSearchLimit } from '../server/requestGuard.js';
 
 type Request = { method?: string; url?: string; headers?: Record<string, string | string[] | undefined>; socket?: { remoteAddress?: string } };
 type Response = { setHeader: (key: string, value: string) => void; status: (code: number) => Response; json: (body: unknown) => void };
-
-const env = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env || {};
 
 export default async function handler(req: Request, res: Response) {
   res.setHeader('Cache-Control', 'no-store');
@@ -14,6 +12,9 @@ export default async function handler(req: Request, res: Response) {
     const retryAfter = consumeSearchLimit(`youtube:${clientKey(req.headers, req.socket?.remoteAddress)}`);
     if (retryAfter) { res.setHeader('Retry-After', String(retryAfter)); return res.status(429).json({ error: 'YouTube search request limit reached. Try again shortly.' }); }
   }
+  // Read the serverless runtime environment at request time. Vercel injects
+  // project variables into the function process, not the Vite browser bundle.
+  const env = (globalThis as typeof globalThis & { process?: { env?: Record<string, string | undefined> } }).process?.env || {};
   const result = await youtubeSearch(url, env);
   return res.status(result.statusCode).json(result.body);
 }

@@ -16,6 +16,10 @@ export interface YouTubeTransportController {
 }
 
 export type RepeatMode = 'off' | 'all' | 'one';
+type QueueContinuation =
+  | { kind: 'video'; items: YouTubeResult[]; index: number }
+  | { kind: 'audio'; items: AudioCatalogTrack[]; index: number }
+  | { kind: 'local'; index: number; shuffle: boolean; repeat: RepeatMode };
 
 interface UniversalPlayerClock {
   time: number;
@@ -40,7 +44,7 @@ export interface UniversalPlayerContextValue {
   removeFromUserQueue: (index: number) => void;
   moveUserQueueItem: (fromIndex: number, toIndex: number) => void;
   clearUserQueue: () => void;
-  playItem: (item: PlayableItem) => void;
+  playItem: (item: PlayableItem, preserveQueueContext?: boolean) => void;
   playing: boolean;
   volume: number;
   repeat: RepeatMode;
@@ -54,10 +58,10 @@ export interface UniversalPlayerContextValue {
   toggleVideo: () => void;
   seekVideo: (seconds: number) => void;
   setVideoVolume: (volume: number) => void;
-  playAudio: (track: AudioCatalogTrack) => void;
+  playAudio: (track: AudioCatalogTrack, sequence?: AudioCatalogTrack[], preserveQueueContext?: boolean) => void;
   playAppleMusic: (track: AudioCatalogTrack) => void;
-  selectVideo: (video: YouTubeResult, sequence?: YouTubeResult[]) => void;
-  playVideo: (video: YouTubeResult, sequence?: YouTubeResult[]) => void;
+  selectVideo: (video: YouTubeResult, sequence?: YouTubeResult[], preserveQueueContext?: boolean) => void;
+  playVideo: (video: YouTubeResult, sequence?: YouTubeResult[], preserveQueueContext?: boolean) => void;
   setVideoQueue: (sequence: YouTubeResult[]) => void;
   nextVideo: () => void;
   prevVideo: () => void;
@@ -83,11 +87,20 @@ export interface UniversalPlayerContextValue {
 const Context = createContext<UniversalPlayerContextValue | null>(null);
 const ClockContext = createContext<UniversalPlayerClock>({ time: 0, duration: 0, videoTime: 0, videoDuration: 0 });
 const sameTrack = (a: AudioCatalogTrack, b: AudioCatalogTrack) => a.provider === b.provider && a.id === b.id;
+const randomIndexExcept = (length: number, current: number) => {
+  if (length < 2) return current;
+  const candidate = Math.floor(Math.random() * (length - 1));
+  return candidate >= current ? candidate + 1 : candidate;
+};
 
 export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   const player = usePlayer();
   const musicKitRef = useRef<MusicKitInstance | null>(null);
   const musicKitListenersRef = useRef<Array<{ name: string; listener: (event?: unknown) => void }>>([]);
+  const musicKitPlayingRef = useRef(false);
+  const musicKitEndHandledRef = useRef(false);
+  const suppressMusicKitEndRef = useRef(false);
+  const musicKitEndedHandlerRef = useRef<() => void>(() => {});
   const videoControllerRef = useRef<YouTubeTransportController | null>(null);
   const [activeAudio, setActiveAudio] = useState<AudioCatalogTrack | null>(null);
   const [activeVideo, setActiveVideo] = useState<YouTubeResult | null>(null);
@@ -108,15 +121,26 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   const [videoTime, setVideoTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [userQueue, setUserQueue] = useState<PlayableItem[]>([]);
+  const queueContinuationRef = useRef<QueueContinuation | null>(null);
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const toggleQueue = useCallback(() => setIsQueueOpen((open) => !open), []);
 
   const syncMusicKit = useCallback(() => {
     const kit = musicKitRef.current;
     if (!kit) return;
-    setPlaying(Boolean(kit.player.isPlaying));
+    const isPlaying = Boolean(kit.player.isPlaying);
     const current = kit.player.currentPlaybackTime;
     const total = kit.player.currentPlaybackDuration;
+    if (isPlaying) {
+      musicKitEndHandledRef.current = false;
+      suppressMusicKitEndRef.current = false;
+    }
+    if (musicKitPlayingRef.current && !isPlaying && !suppressMusicKitEndRef.current && !musicKitEndHandledRef.current && Number.isFinite(total) && total > 0 && current >= total - 1) {
+      musicKitEndHandledRef.current = true;
+      musicKitEndedHandlerRef.current();
+    }
+    musicKitPlayingRef.current = isPlaying;
+    setPlaying(isPlaying);
     setTime(Number.isFinite(current) ? Math.max(0, current) : 0);
     setDuration(Number.isFinite(total) ? Math.max(0, total) : 0);
     setVolumeState(Number.isFinite(kit.player.volume) ? kit.player.volume : 0.85);
@@ -140,13 +164,16 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
 
   const pauseCurrent = useCallback(() => {
     const audio = player.getAudioElement();
-    if (activeAudio?.playbackKind === 'subscription') musicKitRef.current?.player.pause();
+    if (activeAudio?.playbackKind === 'subscription') {
+      suppressMusicKitEndRef.current = true;
+      musicKitRef.current?.player.pause();
+    }
     if (audio) audio.pause();
     if (activeAudio) setAudioActivity(`catalogue:${activeAudio.provider}:${activeAudio.id}`, false);
     setPlaybackOwner('none');
   }, [activeAudio, player.getAudioElement]);
 
-  const beginAudio = useCallback((track: AudioCatalogTrack, index: number) => {
+  const beginAudio = useCallback((track: AudioCatalogTrack, index: number, preserveQueueContext = false) => {
     if (track.playbackKind === 'subscription') return;
     const audio = player.getAudioElement();
     if (!audio) return;
@@ -159,7 +186,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     setActiveVideo(null);
     setPlaybackOwner('catalogue-audio');
     setVideoPlaying(false); setVideoReady(false); setVideoMode(false); setVideoTime(0); setVideoDuration(0); videoControllerRef.current = null;
-    setVideoQueueState([]); setVideoQueueIndex(-1);
+    if (!preserveQueueContext) { setVideoQueueState([]); setVideoQueueIndex(-1); }
     setActiveAudio(track);
     setQueueIndex(index);
     audio.volume = volume;
@@ -178,7 +205,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     });
   }, [player, volume]);
 
-  const playAppleMusic = useCallback(async (track: AudioCatalogTrack) => {
+  const playAppleMusic = useCallback(async (track: AudioCatalogTrack, preserveQueueContext = false) => {
     claimPlayback('apple-musickit');
     const audio = player.getAudioElement();
     audio?.pause();
@@ -186,7 +213,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     if (player.playing) player.toggle();
     setPlaying(false); setTime(0); setDuration(0); setError('Connecting to Apple Music…');
     setActiveAudio(track);
-    setActiveVideo(null); setVideoQueueState([]); setVideoQueueIndex(-1); setVideoPlaying(false); setVideoReady(false); setVideoMode(false); videoControllerRef.current = null;
+    setActiveVideo(null); if (!preserveQueueContext) { setVideoQueueState([]); setVideoQueueIndex(-1); } setVideoPlaying(false); setVideoReady(false); setVideoMode(false); videoControllerRef.current = null;
     try {
       const kit = await getMusicKitInstance();
       musicKitRef.current = kit;
@@ -206,18 +233,38 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [activeAudio, attachMusicKitListeners, player, syncMusicKit, volume]);
 
-  const playAudio = useCallback((track: AudioCatalogTrack) => {
+  const playAudio = useCallback((track: AudioCatalogTrack, sequence: AudioCatalogTrack[] = [track], preserveQueueContext = false) => {
+    const nextQueue = [...new Map([...sequence, track].map((item) => [`${item.provider}:${item.id}`, item])).values()];
+    const selectedIndex = nextQueue.findIndex((item) => sameTrack(item, track));
+    if (!preserveQueueContext) {
+      queueContinuationRef.current = null;
+      setQueue(nextQueue);
+      setQueueIndex(selectedIndex);
+    }
+
+    // Replace the active source before starting another provider. The shared local
+    // audio element and YouTube iframe are paused in place; neither is duplicated.
+    pauseCurrent();
+    videoControllerRef.current?.pauseVideo();
+    setActiveVideo(null);
+    if (!preserveQueueContext) {
+      setVideoQueueState([]);
+      setVideoQueueIndex(-1);
+    }
+    setVideoPlaying(false);
+    setVideoReady(false);
+    setVideoMode(false);
+    setVideoTime(0);
+    setVideoDuration(0);
+    videoControllerRef.current = null;
+    setPlaybackOwner('none');
+    if (player.playing) player.toggle();
     if (track.playbackKind === 'subscription') {
-      setQueue([track, ...queue.filter((queued) => !sameTrack(queued, track))]);
-      setQueueIndex(0);
-      void playAppleMusic(track);
+      void playAppleMusic(track, preserveQueueContext);
       return;
     }
-    if (player.playing) player.toggle();
-    const nextQueue = [track, ...queue.filter((queued) => !sameTrack(queued, track))];
-    setQueue(nextQueue);
-    beginAudio(track, 0);
-  }, [beginAudio, player, queue, playAppleMusic]);
+    beginAudio(track, preserveQueueContext ? queueIndex : selectedIndex, preserveQueueContext);
+  }, [beginAudio, pauseCurrent, player, playAppleMusic, queueIndex]);
 
   const addToQueue = useCallback((track: AudioCatalogTrack) => {
     setQueue((current) => current.some((queued) => sameTrack(queued, track)) ? current : [...current, track]);
@@ -226,21 +273,22 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   const playQueued = useCallback((index: number) => {
     const track = queue[index];
     if (!track) return;
-    if (player.playing) player.toggle();
-    if (track.playbackKind === 'subscription') { void playAppleMusic(track); setQueueIndex(index); }
-    else beginAudio(track, index);
-  }, [beginAudio, player, queue, playAppleMusic]);
+    playAudio(track, queue);
+  }, [queue, playAudio]);
 
-  const selectVideo = useCallback((video: YouTubeResult, sequence: YouTubeResult[] = [video]) => {
+  const selectVideo = useCallback((video: YouTubeResult, sequence: YouTubeResult[] = [video], preserveQueueContext = false) => {
     pauseCurrent();
     claimPlayback('youtube-iframe');
     musicKitRef.current?.player.stop();
     if (player.playing) player.toggle();
     setActiveAudio(null);
     setActiveVideo(video);
-    const uniqueSequence = [...new Map([...sequence, video].map((item) => [item.id, item])).values()];
-    setVideoQueueState(uniqueSequence);
-    setVideoQueueIndex(uniqueSequence.findIndex((item) => item.id === video.id));
+    if (!preserveQueueContext) {
+      queueContinuationRef.current = null;
+      const uniqueSequence = [...new Map([...sequence, video].map((item) => [item.id, item])).values()];
+      setVideoQueueState(uniqueSequence);
+      setVideoQueueIndex(uniqueSequence.findIndex((item) => item.id === video.id));
+    }
     setPlaybackOwner('youtube-iframe');
     setPlaying(false);
     setTime(0);
@@ -270,12 +318,12 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     setPlaybackOwner('none');
   }, []);
 
-  const playVideo = useCallback((video: YouTubeResult, sequence?: YouTubeResult[]) => {
+  const playVideo = useCallback((video: YouTubeResult, sequence?: YouTubeResult[], preserveQueueContext = false) => {
     if (activeVideo?.id === video.id && videoMode && videoReady) {
       if (!videoPlaying) videoControllerRef.current?.playVideo();
       return;
     }
-    selectVideo(video, sequence);
+    selectVideo(video, sequence, preserveQueueContext);
     if (video.embeddingStatus === 'blocked' || (video.embeddable === false && video.embeddingStatus !== 'unknown')) {
       setVideoMode(false);
       setError('This video owner has disabled embedded playback. Open it on YouTube instead.');
@@ -321,6 +369,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   const handleVideoEndedRef = useRef<() => void>(() => {});
   handleVideoEndedRef.current = () => {
     if (!activeVideo || !videoMode) return;
+    if (userQueue.length > 0 || queueContinuationRef.current) { next(); return; }
     if (repeat === 'one') {
       videoControllerRef.current?.seekTo(0);
       videoControllerRef.current?.playVideo();
@@ -362,18 +411,19 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     setQueueIndex(-1);
   }, [activeAudio, closeAudio]);
 
-  const playItem = useCallback((item: PlayableItem) => {
+  const playItem = useCallback((item: PlayableItem, preserveQueueContext = false) => {
     if (item.kind === 'video') {
-      playVideo(item.raw, [item.raw, ...videoQueue.filter((v) => v.id !== item.id)]);
+      playVideo(item.raw, [item.raw], preserveQueueContext);
     } else if (item.kind === 'external') {
-      playAudio(item.raw);
+      playAudio(item.raw, undefined, preserveQueueContext);
     } else {
+      if (!preserveQueueContext) queueContinuationRef.current = null;
       pauseCurrent();
       closeVideo();
       closeAudio();
       player.play(item.trackIndex);
     }
-  }, [playVideo, videoQueue, playAudio, pauseCurrent, closeVideo, closeAudio, player]);
+  }, [playVideo, playAudio, pauseCurrent, closeVideo, closeAudio, player]);
 
   const addToUserQueue = useCallback((source: PlayableItem | Track | AudioCatalogTrack | YouTubeResult) => {
     const item = toPlayableItem(source);
@@ -411,8 +461,6 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
         watchUrl: activeVideo.watchUrl,
         embeddable: activeVideo.embeddable,
         embeddingStatus: activeVideo.embeddingStatus,
-        genre: 'Electronic / Video',
-        bpm: 126,
         raw: activeVideo,
       };
     }
@@ -427,8 +475,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
         durationSeconds: activeAudio.durationSeconds || duration || 0,
         provider: activeAudio.provider,
         playbackKind: activeAudio.playbackKind,
-        genre: activeAudio.genre || 'Electronic',
-        bpm: 124,
+        genre: activeAudio.genre,
         raw: activeAudio,
       };
     }
@@ -437,9 +484,65 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
 
   const next = useCallback(() => {
     if (userQueue.length > 0) {
+      if (!queueContinuationRef.current) {
+        if (activeVideo) queueContinuationRef.current = { kind: 'video', items: videoQueue, index: videoQueueIndex };
+        else if (activeAudio) queueContinuationRef.current = { kind: 'audio', items: queue, index: queueIndex };
+        else queueContinuationRef.current = { kind: 'local', index: player.i, shuffle: player.shuffle, repeat: player.repeat };
+      }
       const [nextItem, ...remaining] = userQueue;
       setUserQueue(remaining);
-      playItem(nextItem);
+      playItem(nextItem, true);
+      return;
+    }
+    if (queueContinuationRef.current) {
+      const continuation = queueContinuationRef.current;
+      queueContinuationRef.current = null;
+      if (continuation.kind === 'video' && continuation.items.length > 0) {
+        let index = continuation.index;
+        if (repeat !== 'one') {
+          index = shuffle && continuation.items.length > 1
+            ? randomIndexExcept(continuation.items.length, continuation.index)
+            : continuation.index + 1;
+          if (index >= continuation.items.length) {
+            if (repeat !== 'all') index = -1;
+            else index = 0;
+          }
+        }
+        if (index >= 0) { playVideo(continuation.items[index], continuation.items); return; }
+      } else if (continuation.kind === 'audio' && continuation.items.length > 0) {
+        let index = continuation.index;
+        if (repeat !== 'one') {
+          index = shuffle && continuation.items.length > 1
+            ? randomIndexExcept(continuation.items.length, continuation.index)
+            : continuation.index + 1;
+          if (index >= continuation.items.length) {
+            if (repeat !== 'all') index = -1;
+            else index = 0;
+          }
+        }
+        if (index >= 0) { playAudio(continuation.items[index], continuation.items); return; }
+      } else if (continuation.kind === 'local') {
+        let index = continuation.index;
+        if (continuation.repeat !== 'one') {
+          index = continuation.shuffle && tracks.length > 1
+            ? randomIndexExcept(tracks.length, continuation.index)
+            : continuation.index + 1;
+          if (index >= tracks.length) {
+            if (continuation.repeat !== 'all') index = -1;
+            else index = 0;
+          }
+        }
+        if (index >= 0) {
+          pauseCurrent();
+          closeVideo();
+          closeAudio();
+          player.play(index);
+          return;
+        }
+      }
+      if (activeVideo) { videoControllerRef.current?.pauseVideo(); setVideoPlaying(false); }
+      else if (activeAudio) { pauseCurrent(); setPlaying(false); }
+      else if (player.playing) player.toggle();
       return;
     }
     if (activeVideo) {
@@ -457,14 +560,27 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
       const index = queueIndex + 1;
       if (index >= queue.length) {
         if (repeat === 'all') { playQueued(0); return; }
-        closeAudio();
+        if (activeAudio.playbackKind === 'subscription') musicKitRef.current?.player.pause();
+        else player.getAudioElement()?.pause();
+        setPlaying(false);
         return;
       }
       playQueued(index);
       return;
     }
     player.next();
-  }, [userQueue, activeVideo, nextVideo, activeAudio, queue, shuffle, queueIndex, repeat, playQueued, closeAudio, player, playItem]);
+  }, [userQueue, activeVideo, videoQueue, videoQueueIndex, nextVideo, activeAudio, queue, shuffle, queueIndex, repeat, playQueued, player, playItem, playVideo, playAudio, pauseCurrent, closeVideo, closeAudio]);
+  musicKitEndedHandlerRef.current = next;
+
+  useEffect(() => {
+    const onLocalTrackEnded = (event: Event) => {
+      if (userQueue.length === 0 && !queueContinuationRef.current) return;
+      event.preventDefault();
+      next();
+    };
+    window.addEventListener('aak-local-audio-ended', onLocalTrackEnded);
+    return () => window.removeEventListener('aak-local-audio-ended', onLocalTrackEnded);
+  }, [next, userQueue.length]);
 
   const prev = useCallback(() => {
     const currentSeconds = activeVideo ? videoTime : activeAudio ? time : player.getAudioElement()?.currentTime || 0;
@@ -544,13 +660,14 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const onEnded = useCallback(() => {
+    if (userQueue.length > 0 || queueContinuationRef.current) { next(); return; }
     if (repeat === 'one') {
       const audio = player.getAudioElement();
       if (audio) { audio.currentTime = 0; void audio.play().catch(() => {}); }
       return;
     }
     next();
-  }, [next, repeat, player.getAudioElement]);
+  }, [next, repeat, player.getAudioElement, userQueue.length]);
 
   useEffect(() => {
     const audio = player.getAudioElement();

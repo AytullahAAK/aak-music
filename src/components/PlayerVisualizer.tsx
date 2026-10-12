@@ -3,13 +3,18 @@ import { motion, reduced } from '../hooks/motion';
 import { sampleAnalyser } from '../hooks/analyser';
 import { useVisualizer } from '../hooks/useVisualizer';
 
-function PlayerVisualizer() {
+const EMPTY_BANDS = new Float32Array(32);
+const EMPTY_WAVEFORM = new Float32Array(128);
+
+function PlayerVisualizer({ analyserAvailable = true }: { analyserAvailable?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { style, quality } = useVisualizer();
   const styleRef = useRef(style);
   const qualityRef = useRef(quality);
+  const analyserAvailableRef = useRef(analyserAvailable);
   styleRef.current = style;
   qualityRef.current = quality;
+  analyserAvailableRef.current = analyserAvailable;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -26,11 +31,12 @@ function PlayerVisualizer() {
     const color = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || (name === '--accent' ? '134 88 255' : '95 212 255');
     const draw = () => {
       ctx.clearRect(0, 0, width, height);
-      const active = motion.playing;
+      const available = analyserAvailableRef.current;
+      const active = available && motion.playing;
       const level = active ? Math.min(1, motion.level) : 0;
       const bass = active ? Math.min(1, motion.bass) : 0;
       const accent = color('--accent'); const secondary = color('--accent2');
-      const bands = motion.bands; const wave = motion.waveform;
+      const bands = available ? motion.bands : EMPTY_BANDS; const wave = available ? motion.waveform : EMPTY_WAVEFORM;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       const mode = styleRef.current;
 
@@ -74,15 +80,15 @@ function PlayerVisualizer() {
       if (!visible || document.hidden) { stop(); return; }
       if (time - lastFrame >= (qualityRef.current === 'low' ? 50 : 33)) {
         lastFrame = time;
-        if (motion.playing && !reduced) sampleAnalyser();
+        if (analyserAvailableRef.current && motion.playing && !reduced) sampleAnalyser();
         draw();
       }
-      if (motion.playing && !reduced) raf = requestAnimationFrame(frame);
+      if (analyserAvailableRef.current && motion.playing && !reduced) raf = requestAnimationFrame(frame);
       else { draw(); stop(); }
     };
     const start = () => {
-      if (visible && motion.playing && !document.hidden) sampleAnalyser();
-      if (visible && motion.playing && !document.hidden && !reduced && !raf) raf = requestAnimationFrame(frame);
+      if (visible && analyserAvailableRef.current && motion.playing && !document.hidden) sampleAnalyser();
+      if (visible && analyserAvailableRef.current && motion.playing && !document.hidden && !reduced && !raf) raf = requestAnimationFrame(frame);
       else draw();
     };
     const observer = new IntersectionObserver(([entry]) => {
@@ -99,7 +105,7 @@ function PlayerVisualizer() {
   }, []);
 
   return <div className="relative h-20 min-w-0 overflow-hidden rounded-xl border border-bone/10 bg-void/25" data-aak-player-visualizer>
-    <canvas ref={canvasRef} role="img" aria-label={`${style} audio visualizer${motion.playing ? ' active' : ' idle'}`} className="h-full w-full" />
+    <canvas ref={canvasRef} role="img" aria-label={analyserAvailable ? `${style} audio visualizer${motion.playing ? ' active' : ' idle'}` : `${style} visualizer, audio analysis unavailable for this source`} className="h-full w-full" />
     <span aria-hidden="true" className="pointer-events-none absolute left-3 top-2 rounded-full bg-ink/55 px-2 py-1 text-[8px] font-mono uppercase tracking-wider text-bone/45">{style.replace(/^./, (letter) => letter.toUpperCase())}</span>
   </div>;
 }

@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { tracks } from '../data';
 import { attachAnalyser } from './analyser';
-import { claimPlayback, getPlaybackOwner, setAudioActivity, setPlaybackOwner, type PlaybackOwner } from '../utils/audioBus';
+import { claimPlayback, getPlaybackOwner, resumeAudioBus, setAudioActivity, setPlaybackOwner, type PlaybackOwner } from '../utils/audioBus';
 import type { Track } from '../data';
 
 export type Status = 'idle' | 'loading' | 'ready' | 'error' | 'unavailable';
@@ -220,6 +220,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     (n?: number) => {
       setHasInitiatedPlayback(true);
       claimPlayback('aak-local');
+      // Resume Web Audio synchronously from the user's play gesture. Creating or
+      // resuming the context only in the playback effect can miss transient user
+      // activation in browsers, leaving the media element routed into a suspended
+      // graph (the element looks "playing" but its timeline/output never advances).
+      const target = n === undefined || n === i ? track : tracks[n];
+      if (target?.src) void resumeAudioBus().catch(() => {});
       if (n === undefined || n === i) {
         setMedia((m) => (m === 'error' ? 'idle' : m));
         setWant(!!track.src);
@@ -270,6 +276,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const handleEnded = useCallback(() => {
     if (!want) return;
+    const endedEvent = new Event('aak-local-audio-ended', { cancelable: true });
+    if (!window.dispatchEvent(endedEvent)) return;
     if (repeat === 'one') {
       const a = au.current;
       if (a) {

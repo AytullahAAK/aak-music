@@ -28,6 +28,7 @@ function ApplicationShell() {
   const setIsExpanded = useSetPlayerExpanded();
   const localPlayer = usePlayer();
   const universal = useUniversalPlayer();
+  const hasSelectedTrack = Boolean(universal.activeAudio || universal.activeVideo || localPlayer.hasInitiatedPlayback || localPlayer.playing);
   const previousPath = useRef<string | null>(null);
   const pages: Record<string, typeof HomePage> = {
     '/': HomePage,
@@ -56,7 +57,7 @@ function ApplicationShell() {
     <Suspense fallback={null}><AudioVisualizerBackground /></Suspense>
     <a href="#top" className="sr-only z-[110] bg-bone px-4 py-2 text-ink focus:not-sr-only focus:fixed focus:left-4 focus:top-4">Skip to content</a>
     <Navbar />
-    <main id="top" tabIndex={-1} className={`relative z-10 w-full min-w-0 ${universal.activeVideo && universal.videoMode && !localPlayer.isExpanded ? 'youtube-player-dock-main' : ''}`}>
+    <main id="top" tabIndex={-1} className={`relative z-10 w-full min-w-0 ${hasSelectedTrack && !localPlayer.isExpanded ? 'aak-player-dock-main' : ''} ${universal.activeVideo && universal.videoMode && !localPlayer.isExpanded ? 'youtube-player-dock-main' : ''}`}>
       <Suspense fallback={<PageLoader />}><Page key={pathname} /></Suspense>
     </main>
     <Suspense fallback={null}><Footer /></Suspense>

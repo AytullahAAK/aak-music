@@ -292,7 +292,28 @@ function Search({ q: initialQuery, embedded = false }: { q: string; embedded?: b
   const submitSearch = (event?: FormEvent) => { event?.preventDefault(); setTab('search'); setVoiceAwaitingReview(false); rememberSearch(query); };
   const finishSelection = () => { if (!embedded) close(); };
   const playLocal = (index: number) => { universal.closeAudio(); universal.closeVideo(); localPlayer.play(index); finishSelection(); };
-  const playExternal = (track: AudioCatalogTrack) => { universal.playAudio(track); finishSelection(); };
+  const asAudioTrack = (result: (typeof apple)[number]): AudioCatalogTrack => ({
+    id: result.id,
+    title: result.title,
+    artist: result.artist,
+    album: result.album,
+    image: result.image,
+    durationSeconds: result.durationSeconds,
+    audioUrl: result.previewUrl,
+    trackUrl: result.trackUrl,
+    provider: result.catalogSource === 'iTunes Store' ? 'iTunes Store' : 'Apple Music',
+    playbackKind: result.playbackKind === 'subscription' ? 'subscription' : 'preview',
+    genre: result.genre,
+    releaseDate: result.releaseDate,
+    explicit: result.explicit,
+  });
+  const playExternal = (track: AudioCatalogTrack) => {
+    const playableSequence = apple
+      .filter((result) => result.playbackKind === 'subscription' || (result.playbackKind === 'preview' && Boolean(result.previewUrl)))
+      .map(asAudioTrack);
+    universal.playAudio(track, playableSequence);
+    finishSelection();
+  };
   const selectVideo = (video: YouTubeResult) => {
     if (video.embeddingStatus === 'blocked') {
       universal.selectVideo(video, youtube);

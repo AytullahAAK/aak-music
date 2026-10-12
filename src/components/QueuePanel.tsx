@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { useUniversalPlayer, useUniversalPlayerTime } from '../hooks/useUniversalPlayer';
 import { usePlayer, useTime, fmt } from '../hooks/usePlayer';
-import { getRecommendationsForTrack, type Recommendation, type PlayableItem } from '../services/music/recommendations';
+import { getRecommendationsForTrack, toPlayableItem, type Recommendation, type PlayableItem } from '../services/music/recommendations';
 import { tracks } from '../data';
 import Icon, { Eq } from './Icon';
 import Art from './Art';
@@ -16,6 +16,7 @@ function QueuePanel() {
   const [activeTab, setActiveTab] = useState<'queue' | 'related'>('queue');
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loadingRecs, setLoadingRecs] = useState(false);
+  const [recommendationError, setRecommendationError] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [queuedNotification, setQueuedNotification] = useState<string | null>(null);
 
@@ -44,14 +45,20 @@ function QueuePanel() {
     ? universalTime.duration || current.durationSeconds
     : localTime.dur || current.durationSeconds;
 
-  // Upcoming in playlist context when userQueue finishes
-  const upcomingInContext = tracks.filter((t) => t.id !== current.id);
+  const upcomingInContext = current.kind === 'local' ? tracks.filter((track) => track.id !== current.id) : [];
+  const providerContextItems: PlayableItem[] = current.kind === 'video'
+    ? universal.videoQueue.slice(universal.videoQueueIndex + 1).map(toPlayableItem)
+    : current.kind === 'external'
+    ? universal.queue.slice(universal.queueIndex + 1).map(toPlayableItem)
+    : [];
+  const providerContextLabel = current.kind === 'video' ? 'Remaining YouTube search results' : `Remaining ${current.provider} search results`;
 
-  // Fetch recommendations when current track changes or tab opened
+  // Do not spend provider quota until the user opens the related tab.
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || activeTab !== 'related') return;
     const controller = new AbortController();
     setLoadingRecs(true);
+    setRecommendationError('');
     getRecommendationsForTrack(current, controller.signal)
       .then((recs) => {
         if (!controller.signal.aborted) {
@@ -59,11 +66,16 @@ function QueuePanel() {
           setLoadingRecs(false);
         }
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setLoadingRecs(false);
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setLoadingRecs(false);
+          setRecommendationError(error instanceof Error ? error.message : current.kind === 'local'
+            ? 'The AAK Music library could not be read. Please try again.'
+            : `The ${current.provider} catalog search failed. Check the provider configuration or network and retry.`);
+        }
       });
     return () => controller.abort();
-  }, [isOpen, current.id, current.kind]);
+  }, [isOpen, activeTab, current.id, current.kind, current.provider]);
 
   // Trap focus and handle escape
   useEffect(() => {
@@ -334,10 +346,10 @@ function QueuePanel() {
                 )}
               </section>
 
-              {/* UPCOMING IN ALBUM / PLAYLIST */}
-              <section aria-labelledby="playlist-sequence-heading">
+              {/* AAK library browsing is relevant only while a local release is active. */}
+              {current.kind === 'local' && <section aria-labelledby="playlist-sequence-heading">
                 <p id="playlist-sequence-heading" className="text-[10px] font-mono uppercase tracking-widest text-bone/55">
-                  Next in AAK Master Catalog
+                  Browse AAK Master Releases
                 </p>
                 <ul className="mt-2.5 space-y-1.5" role="list">
                   {upcomingInContext.slice(0, 4).map((track) => (
@@ -378,15 +390,39 @@ function QueuePanel() {
                     </li>
                   ))}
                 </ul>
-              </section>
+              </section>}
+              {providerContextItems.length > 0 && (
+                <section aria-label="Provider playback sequence">
+                  <p className="text-[10px] font-mono uppercase tracking-widest text-bone/55">{providerContextLabel}</p>
+                  <ul className="mt-2.5 space-y-1.5" role="list">
+                    {providerContextItems.slice(0, 8).map((item) => (
+                      <li key={`${item.provider}:${item.id}`} className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-bone/5 bg-raised/20 p-2.5">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-raised">{item.image ? <img src={item.image} alt="" className="h-full w-full object-cover" /> : <Art a={220} b={180} className="h-full w-full object-cover" />}</div>
+                          <div className="min-w-0"><p className="truncate text-xs font-medium text-bone">{item.title}</p><p className="truncate text-[10px] text-bone/50">{item.artist} · {item.provider}</p></div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button type="button" onClick={() => {
+                            if (item.kind === 'video') universal.playVideo(item.raw, universal.videoQueue);
+                            else if (item.kind === 'external') universal.playAudio(item.raw, universal.queue);
+                          }} aria-label={`Play ${item.title}`} className="grid h-9 w-9 place-items-center rounded-full bg-bone/10 text-bone transition hover:bg-cyan hover:text-ink"><Icon n="play" s={13} /></button>
+                          <button type="button" onClick={() => handleAddToQueue(item)} aria-label={`Add ${item.title} to queue`} className="rounded-lg border border-bone/15 px-2.5 py-1 text-[10px] font-mono text-bone/70 hover:border-cyan hover:text-cyan">+ Queue</button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
             </div>
           ) : (
             /* RELATED MUSIC TAB */
             <div className="space-y-4">
               <div className="rounded-xl border border-bone/10 bg-raised/30 p-3">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-cyan">Smart Recommendations</p>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-cyan">Related music</p>
                 <p className="mt-1 text-xs text-bone/60">
-                  Curated based on tempo ({current.bpm} BPM), genre ({current.genre}), and artist catalog for "{current.title}".
+                  {current.kind === 'local'
+                    ? 'Suggestions come only from the existing AAK Music catalog and its track metadata.'
+                    : `These are real ${current.provider} catalog search results based on the selected track, not a guaranteed recommendation feed.`}
                 </p>
               </div>
 
@@ -395,9 +431,11 @@ function QueuePanel() {
                   <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-cyan border-t-transparent" />
                   <p className="text-xs text-bone/50">Analyzing catalog & recommendations…</p>
                 </div>
+              ) : recommendationError ? (
+                <div role="alert" className="rounded-2xl border border-amber-300/20 bg-amber-300/5 p-6 text-center text-xs text-bone/70">{recommendationError}</div>
               ) : recommendations.length === 0 ? (
                 <div className="rounded-2xl border border-bone/10 p-6 text-center text-xs text-bone/55">
-                  No related recommendations available for this track right now.
+                  No playable related items were returned for this track.
                 </div>
               ) : (
                 <ul className="space-y-2" role="list">

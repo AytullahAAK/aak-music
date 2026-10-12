@@ -9,7 +9,7 @@ import EqualizerControl from './EqualizerControl';
 import LyricsAssistant from './LyricsAssistant';
 import { usePlayer, useTime, fmt, statusLabel } from '../hooks/usePlayer';
 import { useUniversalPlayer, useUniversalPlayerTime } from '../hooks/useUniversalPlayer';
-import { getRecommendationsForTrack, type Recommendation, type PlayableItem } from '../services/music/recommendations';
+import { getRecommendationsForTrack, toPlayableItem, type Recommendation, type PlayableItem } from '../services/music/recommendations';
 
 function TimelineScrubber({
   current,
@@ -62,6 +62,7 @@ function UnifiedPlayerExperience() {
   const [activeTab, setActiveTab] = useState<'queue' | 'related' | 'search' | 'lyrics'>('queue');
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loadingRecs, setLoadingRecs] = useState(false);
+  const [recommendationError, setRecommendationError] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const currentItem = universal.currentItem;
@@ -74,6 +75,9 @@ function UnifiedPlayerExperience() {
   const image = currentItem.image;
   const isVideo = Boolean(video && videoMode);
   const isVideoSelected = Boolean(video && !videoMode);
+  // Only AAK-owned media is known to be same-origin and connected to our shared
+  // analyser. Do not assume third-party preview URLs expose samples to Web Audio.
+  const analyserAvailable = !video && !external;
 
   const isPlaying = isVideo
     ? universal.videoPlaying
@@ -122,10 +126,12 @@ function UnifiedPlayerExperience() {
 
   const isFavorite = local.isFavorite(currentItem.id);
 
-  // Fetch recommendations for current track
+  // Provider-backed related search is lazy and shared with the queue drawer cache.
   useEffect(() => {
+    if (activeTab !== 'related') return;
     const controller = new AbortController();
     setLoadingRecs(true);
+    setRecommendationError('');
     getRecommendationsForTrack(currentItem, controller.signal)
       .then((recs) => {
         if (!controller.signal.aborted) {
@@ -133,11 +139,16 @@ function UnifiedPlayerExperience() {
           setLoadingRecs(false);
         }
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setLoadingRecs(false);
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setLoadingRecs(false);
+          setRecommendationError(error instanceof Error ? error.message : currentItem.kind === 'local'
+            ? 'The AAK Music library could not be read. Please try again.'
+            : `The ${currentItem.provider} catalog search failed. Check provider configuration or network and retry.`);
+        }
       });
     return () => controller.abort();
-  }, [currentItem.id, currentItem.kind]);
+  }, [activeTab, currentItem.id, currentItem.kind, currentItem.provider]);
 
   const notify = (msg: string) => {
     setToastMessage(msg);
@@ -155,7 +166,13 @@ function UnifiedPlayerExperience() {
     ? { title: external.title, artist: external.artist, provider: external.provider, sourceUrl: external.trackUrl, sourceKind: 'third-party' as const }
     : { title: local.track.title, artist: local.track.artist, provider: 'AAK Music', sourceKind: 'local' as const };
 
-  const upcomingInContext = tracks.filter((t) => t.id !== currentItem.id);
+  const upcomingInContext = currentItem.kind === 'local' ? tracks.filter((t) => t.id !== currentItem.id) : [];
+  const providerContextItems = video
+    ? universal.videoQueue.slice(universal.videoQueueIndex + 1)
+    : external
+    ? universal.queue.slice(universal.queueIndex + 1)
+    : [];
+  const providerContextLabel = video ? 'Remaining YouTube search results' : `Remaining ${external?.provider ?? 'provider'} search results`;
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 md:px-8 md:py-10">
@@ -284,13 +301,14 @@ function UnifiedPlayerExperience() {
           <div className="relative overflow-hidden rounded-3xl border border-bone/12 bg-raised/20 p-4 shadow-xl backdrop-blur-xl">
             <div className="flex items-center justify-between border-b border-bone/10 pb-3">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-cyan">Live Spectrum</span>
-                {isPlaying && <Eq on={true} />}
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-cyan">{analyserAvailable ? 'Live Spectrum' : 'Playback activity'}</span>
+                {analyserAvailable && isPlaying && <Eq on={true} />}
               </div>
               <VisualizerToolbar embedded />
             </div>
+            {!analyserAvailable && <p className="mt-2 text-[10px] text-bone/45">This provider does not expose audio samples to AAK Music. The visualizer remains idle rather than showing simulated spectrum data.</p>}
             <div className="mt-3 h-24 w-full">
-              <PlayerVisualizer />
+              <PlayerVisualizer analyserAvailable={analyserAvailable} />
             </div>
           </div>
 
@@ -398,7 +416,7 @@ function UnifiedPlayerExperience() {
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center gap-2">
                 {/* Equalizer */}
-                <EqualizerControl available={!external || external.playbackKind !== 'subscription'} />
+                <EqualizerControl available={analyserAvailable} />
 
                 {/* Video Mode Toggle if Available */}
                 {external?.videoVersion && (
@@ -529,7 +547,7 @@ function UnifiedPlayerExperience() {
                 <div>
                   <h3 className="font-display text-lg font-bold text-bone">Up Next Playback Order</h3>
                   <p className="text-xs text-bone/55">
-                    User-queued tracks play first in priority order, followed by upcoming catalog tracks.
+                    User-queued tracks play first, followed by the active track's real playback sequence.
                   </p>
                 </div>
                 {universal.userQueue.length > 0 && (
@@ -637,10 +655,10 @@ function UnifiedPlayerExperience() {
                 </ul>
               )}
 
-              {/* UPCOMING IN CATALOG */}
-              <div className="mt-8 border-t border-bone/10 pt-6">
+              {/* Local library browsing stays separate from external provider queues. */}
+              {currentItem.kind === 'local' && <div className="mt-8 border-t border-bone/10 pt-6">
                 <h4 className="font-mono text-xs uppercase tracking-widest text-bone/50">
-                  Upcoming in AAK Master Releases
+                  Browse AAK Master Releases
                 </h4>
                 <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3">
                   {upcomingInContext.slice(0, 6).map((track) => (
@@ -701,7 +719,26 @@ function UnifiedPlayerExperience() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </div>}
+              {providerContextItems.length > 0 && (
+                <section className="mt-8 border-t border-bone/10 pt-6" aria-label="Provider playback sequence">
+                  <h4 className="font-mono text-xs uppercase tracking-widest text-bone/50">{video ? 'Remaining YouTube search results' : `Remaining ${external?.provider ?? 'provider'} search results`}</h4>
+                  <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-3">
+                    {providerContextItems.slice(0, 8).map((item) => (
+                      <div key={`${item.provider}:${item.id}`} className="flex min-w-0 items-center justify-between gap-2 rounded-2xl border border-bone/10 bg-void/40 p-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-raised">{('thumbnail' in item ? item.thumbnail : item.image) ? <img src={'thumbnail' in item ? item.thumbnail : item.image} alt="" className="h-full w-full object-cover" /> : <Art a={220} b={180} className="h-full w-full object-cover" />}</div>
+                          <div className="min-w-0"><p className="truncate text-xs font-semibold text-bone">{item.title}</p><p className="truncate text-[10px] text-bone/55">{item.artist} · {item.provider}</p></div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button type="button" onClick={() => { if ('watchUrl' in item) universal.playVideo(item, universal.videoQueue); else universal.playAudio(item, universal.queue); }} aria-label={`Play ${item.title}`} className="grid h-9 w-9 place-items-center rounded-full bg-bone/10 text-bone hover:bg-cyan hover:text-ink"><Icon n="play" s={13} /></button>
+                          <button type="button" onClick={() => handleAddToQueue(toPlayableItem(item))} aria-label={`Add ${item.title} to queue`} className="rounded-full border border-bone/15 px-2 py-1 text-[9px] font-mono text-bone/70 hover:border-cyan hover:text-cyan">+ Queue</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           )}
 
@@ -709,20 +746,24 @@ function UnifiedPlayerExperience() {
           {activeTab === 'related' && (
             <div className="space-y-6">
               <div>
-                <h3 className="font-display text-lg font-bold text-bone">Intelligent Related Music</h3>
+                <h3 className="font-display text-lg font-bold text-bone">Related music</h3>
                 <p className="text-xs text-bone/55">
-                  Curated recommendations based on matching tempo ({currentItem.bpm} BPM), genre ({currentItem.genre}), and artist catalog for "{title}".
+                  {currentItem.kind === 'local'
+                    ? 'Suggestions are drawn from the existing AAK Music catalog and its track metadata.'
+                    : `These are real ${currentItem.provider} catalog search results based on this track, not a guaranteed recommendation feed.`}
                 </p>
               </div>
 
               {loadingRecs ? (
                 <div className="py-12 text-center space-y-3">
                   <div className="mx-auto h-7 w-7 animate-spin rounded-full border-2 border-cyan border-t-transparent" />
-                  <p className="text-xs text-bone/50">Analyzing audio parameters & discovering related music…</p>
+                  <p className="text-xs text-bone/50">Searching available catalog data…</p>
                 </div>
+              ) : recommendationError ? (
+                <div role="alert" className="rounded-2xl border border-amber-300/20 bg-amber-300/5 p-8 text-center text-xs text-bone/70">{recommendationError}</div>
               ) : recommendations.length === 0 ? (
                 <div className="rounded-2xl border border-bone/15 p-8 text-center text-xs text-bone/55">
-                  No additional related music found for this specific track.
+                  No playable related items were returned for this track.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">

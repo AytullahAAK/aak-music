@@ -415,7 +415,7 @@ function UnifiedPlayerExperience({ onReturnToDiscovery }: { onReturnToDiscovery?
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setVolume(volume > 0.01 ? 0 : 0.85)}
+                  onClick={() => setVolume(volume > 0.01 ? 0 : 1)}
                   aria-label={volume <= 0.01 ? 'Unmute' : 'Mute'}
                   className="grid h-8 w-8 place-items-center rounded text-bone/55 transition hover:text-cyan"
                 >

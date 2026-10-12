@@ -68,7 +68,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [i, setI] = useState(0);
   const [want, setWant] = useState(false);
   const [media, setMedia] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
-  const [vol, setVolState] = useState(0.85);
+  const [vol, setVolState] = useState(1);
   const [time, setTime] = useState({ t: 0, dur: 0 });
 
   // Shuffle & Repeat states

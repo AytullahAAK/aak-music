@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { tracks } from '../data';
 import { fmt, usePlayer, useTime } from '../hooks/usePlayer';
@@ -10,11 +10,18 @@ import EqualizerControl from './EqualizerControl';
 import FullPlayerModal from './FullPlayerModal';
 import YouTubeVideoModal from './YouTubeVideoModal';
 import QueuePanel from './QueuePanel';
-import { useLocation } from '../router';
+import { navigate, useLocation } from '../router';
 
 type MiniPlayerPosition = { x: number; y: number };
 type MiniPlayerDrag = { pointerId: number; startX: number; startY: number; originX: number; originY: number; width: number; height: number };
+type MobileLongPress = MiniPlayerDrag & { timer: number; active: boolean };
 const MINI_PLAYER_POSITION_KEY = 'aak-mini-player-position-v1';
+const PHONE_MINI_PLAYER_QUERY = '(max-width: 639px) and (pointer: coarse)';
+const PHONE_DRAG_HOLD_MS = 300;
+
+function isPhoneMiniPlayerViewport() {
+  return typeof window !== 'undefined' && window.matchMedia(PHONE_MINI_PLAYER_QUERY).matches;
+}
 
 interface DocumentPictureInPictureApi {
   window: Window | null;
@@ -107,11 +114,27 @@ function readMiniPlayerPosition(): MiniPlayerPosition | null {
   }
 }
 
-function clampMiniPlayerPosition(x: number, y: number, width: number, height: number): MiniPlayerPosition {
+function clampMiniPlayerPosition(x: number, y: number, width: number, height: number, safeArea?: { top: number; right: number; bottom: number; left: number }): MiniPlayerPosition {
   const margin = 8;
+  const top = margin + (safeArea?.top ?? 0);
+  const right = margin + (safeArea?.right ?? 0);
+  const bottom = margin + (safeArea?.bottom ?? 0);
+  const left = margin + (safeArea?.left ?? 0);
   return {
-    x: Math.max(margin, Math.min(x, Math.max(margin, window.innerWidth - width - margin))),
-    y: Math.max(margin, Math.min(y, Math.max(margin, window.innerHeight - height - margin))),
+    x: Math.max(left, Math.min(x, Math.max(left, window.innerWidth - width - right))),
+    y: Math.max(top, Math.min(y, Math.max(top, window.innerHeight - height - bottom))),
+  };
+}
+
+function miniPlayerSafeArea(dock: HTMLElement) {
+  if (!isPhoneMiniPlayerViewport()) return undefined;
+  const style = window.getComputedStyle(dock);
+  const readInset = (name: string) => Number.parseFloat(style.getPropertyValue(name)) || 0;
+  return {
+    top: readInset('--aak-player-safe-top'),
+    right: readInset('--aak-player-safe-right'),
+    bottom: readInset('--aak-player-safe-bottom'),
+    left: readInset('--aak-player-safe-left'),
   };
 }
 
@@ -131,6 +154,7 @@ export default function UniversalPlayer() {
   const [pipError, setPipError] = useState('');
   const [titleOverflows, setTitleOverflows] = useState(false);
   const [titleMarqueeDuration, setTitleMarqueeDuration] = useState(22);
+  const [phoneLayout, setPhoneLayout] = useState(isPhoneMiniPlayerViewport);
 
   const dockRef = useRef<HTMLDivElement>(null);
   const titleViewportRef = useRef<HTMLSpanElement>(null);
@@ -139,8 +163,9 @@ export default function UniversalPlayer() {
   const pipRequestPendingRef = useRef(false);
   const positionRef = useRef(miniPlayerPosition);
   const dragRef = useRef<MiniPlayerDrag | null>(null);
+  const mobileLongPressRef = useRef<MobileLongPress | null>(null);
   const videoVolumeRef = useRef(player.volume);
-  const previousVolume = useRef(0.85);
+  const previousVolume = useRef(1);
 
   const localRef = useRef(local);
   const universalRef = useRef(player);
@@ -149,6 +174,18 @@ export default function UniversalPlayer() {
   universalRef.current = player;
   clockRef.current = playerClock;
   videoVolumeRef.current = player.volume;
+
+  useEffect(() => {
+    const query = window.matchMedia(PHONE_MINI_PLAYER_QUERY);
+    const update = () => setPhoneLayout(query.matches);
+    update();
+    if (query.addEventListener) query.addEventListener('change', update);
+    else query.addListener(update);
+    return () => {
+      if (query.removeEventListener) query.removeEventListener('change', update);
+      else query.removeListener(update);
+    };
+  }, []);
 
   const video = player.activeVideo;
   const isVideoMode = Boolean(video && player.videoMode);
@@ -248,7 +285,7 @@ export default function UniversalPlayer() {
         dragRef.current.height = rect.height;
       }
       const current = positionRef.current ?? { x: rect.left, y: rect.top };
-      const next = clampMiniPlayerPosition(current.x, current.y, rect.width, rect.height);
+      const next = clampMiniPlayerPosition(current.x, current.y, rect.width, rect.height, miniPlayerSafeArea(dock));
       dock.style.left = `${next.x}px`;
       dock.style.top = `${next.y}px`;
       dock.style.right = 'auto';
@@ -283,7 +320,7 @@ export default function UniversalPlayer() {
     const dock = dockRef.current;
     if (!dock) return;
     const rect = size ? null : dock.getBoundingClientRect();
-    const next = clampMiniPlayerPosition(position.x, position.y, size?.width ?? rect!.width, size?.height ?? rect!.height);
+    const next = clampMiniPlayerPosition(position.x, position.y, size?.width ?? rect!.width, size?.height ?? rect!.height, miniPlayerSafeArea(dock));
     dock.style.left = `${next.x}px`;
     dock.style.top = `${next.y}px`;
     dock.style.right = 'auto';
@@ -326,6 +363,70 @@ export default function UniversalPlayer() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   };
 
+  const beginPhoneLongPress = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!phoneLayout || event.pointerType !== 'touch' || event.isPrimary === false) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest('button, a, input, select, textarea, [role="button"], iframe, [data-aak-youtube-player-slot]')) return;
+    const dock = dockRef.current;
+    if (!dock) return;
+    const rect = dock.getBoundingClientRect();
+    const origin = positionRef.current ?? { x: rect.left, y: rect.top };
+    const pending: MobileLongPress = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: origin.x,
+      originY: origin.y,
+      width: rect.width,
+      height: rect.height,
+      active: false,
+      timer: 0,
+    };
+    pending.timer = window.setTimeout(() => {
+      if (mobileLongPressRef.current !== pending || !dockRef.current) return;
+      pending.active = true;
+      dragRef.current = pending;
+      dockRef.current.dataset.mobileDragging = 'true';
+    }, PHONE_DRAG_HOLD_MS);
+    mobileLongPressRef.current = pending;
+    // Capture the pointer immediately so a release outside the dock or a
+    // browser cancellation always clears the pending long press. Native
+    // scrolling remains available until the hold activates; the non-passive
+    // touchmove handler suppresses it only during an active drag.
+    try { dock.setPointerCapture(event.pointerId); } catch { /* The pointer may already have been cancelled. */ }
+  };
+
+  const movePhoneLongPress = (event: ReactPointerEvent<HTMLElement>) => {
+    const pending = mobileLongPressRef.current;
+    if (!pending || pending.pointerId !== event.pointerId) return;
+    if (!pending.active) {
+      if (Math.hypot(event.clientX - pending.startX, event.clientY - pending.startY) > 8) {
+        window.clearTimeout(pending.timer);
+        mobileLongPressRef.current = null;
+      }
+      return;
+    }
+    event.preventDefault();
+    applyMiniPlayerPosition({
+      x: pending.originX + event.clientX - pending.startX,
+      y: pending.originY + event.clientY - pending.startY,
+    }, false, pending);
+  };
+
+  const finishPhoneLongPress = (event: ReactPointerEvent<HTMLElement>) => {
+    const pending = mobileLongPressRef.current;
+    if (!pending || pending.pointerId !== event.pointerId) return;
+    window.clearTimeout(pending.timer);
+    mobileLongPressRef.current = null;
+    if (!pending.active) return;
+    dragRef.current = null;
+    const dock = dockRef.current;
+    const rect = dock?.getBoundingClientRect();
+    if (rect) applyMiniPlayerPosition({ x: rect.left, y: rect.top }, true);
+    dock?.removeAttribute('data-mobile-dragging');
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   const moveMiniPlayerByKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
     const amount = event.shiftKey ? 48 : 16;
     const rect = dockRef.current?.getBoundingClientRect();
@@ -343,7 +444,22 @@ export default function UniversalPlayer() {
     applyMiniPlayerPosition(next, true);
   };
 
-  useEffect(() => () => { dragRef.current = null; }, []);
+  useEffect(() => {
+    const preventScrollDuringActiveDrag = (event: TouchEvent) => {
+      const pending = mobileLongPressRef.current;
+      const dock = dockRef.current;
+      if (!pending?.active || !dock || !(event.target instanceof Node) || !dock.contains(event.target)) return;
+      if (event.cancelable) event.preventDefault();
+    };
+    window.addEventListener('touchmove', preventScrollDuringActiveDrag, { passive: false });
+    return () => {
+      window.removeEventListener('touchmove', preventScrollDuringActiveDrag);
+      if (mobileLongPressRef.current) window.clearTimeout(mobileLongPressRef.current.timer);
+      mobileLongPressRef.current = null;
+      dragRef.current = null;
+      dockRef.current?.removeAttribute('data-mobile-dragging');
+    };
+  }, []);
 
   // Global Keyboard shortcuts
   useEffect(() => {
@@ -360,14 +476,14 @@ export default function UniversalPlayer() {
         if (universalRef.current.activeVideo || universalRef.current.activeAudio) {
           const currentVol = universalRef.current.volume;
           if (currentVol > 0.01) previousVolume.current = currentVol;
-          const nextVolume = currentVol > 0.01 ? 0 : previousVolume.current || 0.85;
+          const nextVolume = currentVol > 0.01 ? 0 : previousVolume.current || 1;
           if (universalRef.current.activeVideo) universalRef.current.setVideoVolume(nextVolume);
           else universalRef.current.setVolume(nextVolume);
         } else if (localRef.current.vol > 0) {
           previousVolume.current = localRef.current.vol;
           localRef.current.setVol(0);
         } else {
-          localRef.current.setVol(previousVolume.current || 0.85);
+          localRef.current.setVol(previousVolume.current || 1);
         }
       } else if (event.code === 'ArrowRight' && (event.metaKey || event.ctrlKey || event.altKey)) {
         event.preventDefault();
@@ -387,6 +503,7 @@ export default function UniversalPlayer() {
   const title = currentItem.title;
   const artist = currentItem.artist;
   const provider = currentItem.provider;
+  const titlePositionKey = phoneLayout ? `${miniPlayerPosition?.x ?? ''},${miniPlayerPosition?.y ?? ''}` : '';
 
   // Measure only the title and its available viewport. CSS handles the motion;
   // ResizeObserver covers track changes and responsive dock resizing without a timer loop.
@@ -417,7 +534,7 @@ export default function UniversalPlayer() {
       observer?.disconnect();
       window.removeEventListener('resize', update);
     };
-  }, [showDock, title]);
+  }, [showDock, title, phoneLayout, titlePositionKey]);
 
   const isPlaying = video ? player.videoPlaying : external ? player.playing : local.playing;
   const currentTime = video ? playerClock.videoTime : external ? playerClock.time : localTime.t;
@@ -545,7 +662,7 @@ export default function UniversalPlayer() {
       previousVolume.current = volume;
       setVolume(0);
     } else {
-      setVolume(previousVolume.current || 0.85);
+      setVolume(previousVolume.current || 1);
     }
   };
 
@@ -554,8 +671,24 @@ export default function UniversalPlayer() {
     setDismissed(true);
   };
 
+  const openMainPlayer = () => {
+    if (!isPlayerRoute) navigate('/player');
+    local.setIsExpanded(true);
+  };
+
   const isFavorite = local.isFavorite(currentItem.id);
   const queueCount = player.userQueue.length;
+  const artImage = currentItem.image
+    ? <img src={currentItem.image} alt="" className="h-full w-full object-cover" />
+    : <Art a={240} b={190} className="h-full w-full object-cover" />;
+  const titleContent = (
+    <span ref={titleViewportRef} className="aak-mini-player__title-viewport">
+      <span key={title} className={`aak-mini-player__title-track ${titleOverflows ? 'is-overflowing' : ''}`} style={{ animationDuration: `${titleMarqueeDuration}s`, '--aak-mini-title-duration': `${titleMarqueeDuration}s` } as CSSProperties}>
+        <span ref={titleMeasureRef} className="aak-mini-player__title-copy">{title}</span>
+        {titleOverflows && <span aria-hidden="true" className="aak-mini-player__title-copy aak-mini-player__title-copy--duplicate">{title}</span>}
+      </span>
+    </span>
+  );
 
   return (
     <>
@@ -573,6 +706,11 @@ export default function UniversalPlayer() {
           aria-label="AAK Music mini player"
           className={`aak-mini-player fixed z-50 text-bone ${video && player.videoMode ? 'aak-mini-player--video' : ''}`}
           style={miniPlayerPosition ? { left: miniPlayerPosition.x, top: miniPlayerPosition.y, right: 'auto', bottom: 'auto' } : undefined}
+          onPointerDown={beginPhoneLongPress}
+          onPointerMove={movePhoneLongPress}
+          onPointerUp={finishPhoneLongPress}
+          onPointerCancel={finishPhoneLongPress}
+          onLostPointerCapture={finishPhoneLongPress}
         >
           <div className="aak-mini-player__header">
             {canOpenBrowserPip && (
@@ -641,28 +779,33 @@ export default function UniversalPlayer() {
 
           <div className="aak-mini-player__body">
             <div className="aak-mini-player__identity min-w-0">
-              <button
-                type="button"
-                onClick={() => local.setIsExpanded(true)}
-                aria-label="Expand full player"
-                className="aak-mini-player__art group relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-bone/15 bg-raised sm:h-14 sm:w-14"
-              >
-                {currentItem.image ? <img src={currentItem.image} alt="" className="h-full w-full object-cover" /> : <Art a={240} b={190} className="h-full w-full object-cover" />}
-                <span className="absolute inset-0 grid place-items-center bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100">
-                  <Icon n="expand" s={16} />
-                </span>
-              </button>
-              <div className="min-w-0 flex-1">
-                <button type="button" onClick={() => local.setIsExpanded(true)} className="aak-mini-player__title-button block w-full min-w-0 text-left font-display text-sm font-bold leading-tight text-bone transition hover:text-cyan" title={title} aria-label={title}>
-                  <span ref={titleViewportRef} className="aak-mini-player__title-viewport">
-                    <span key={title} className={`aak-mini-player__title-track ${titleOverflows ? 'is-overflowing' : ''}`} style={{ animationDuration: `${titleMarqueeDuration}s` }}>
-                      <span ref={titleMeasureRef} className="aak-mini-player__title-copy">{title}</span>
-                      {titleOverflows && <span aria-hidden="true" className="aak-mini-player__title-copy aak-mini-player__title-copy--duplicate">{title}</span>}
-                    </span>
+              {phoneLayout ? (
+                <button
+                  type="button"
+                  onClick={openMainPlayer}
+                  aria-label={`Open music player for ${title}`}
+                  title="Open music player"
+                  className="aak-mini-player__art relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-bone/15 bg-raised sm:h-14 sm:w-14"
+                >{artImage}</button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => local.setIsExpanded(true)}
+                  aria-label="Expand full player"
+                  className="aak-mini-player__art group relative h-12 w-12 shrink-0 overflow-hidden rounded-xl border border-bone/15 bg-raised sm:h-14 sm:w-14"
+                >
+                  {artImage}
+                  <span className="absolute inset-0 grid place-items-center bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                    <Icon n="expand" s={16} />
                   </span>
                 </button>
+              )}
+              <div className="min-w-0 flex-1">
+                {phoneLayout
+                  ? <div className="aak-mini-player__title-button aak-mini-player__title-button--static block w-full min-w-0 text-left font-display text-sm font-bold leading-tight text-bone" title={title}>{titleContent}</div>
+                  : <button type="button" onClick={() => local.setIsExpanded(true)} className="aak-mini-player__title-button block w-full min-w-0 text-left font-display text-sm font-bold leading-tight text-bone transition hover:text-cyan" title={title} aria-label={title}>{titleContent}</button>}
                 <p className="aak-mini-player__artist mt-1 truncate text-xs" title={artist}>{artist}</p>
-                <span className="mt-1 inline-flex max-w-full truncate rounded-md bg-cyan/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-cyan">{provider}</span>
+                <span className="aak-mini-player__provider mt-1 inline-flex max-w-full truncate rounded-md bg-cyan/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-cyan">{provider}</span>
               </div>
               {!video && currentItem.kind === 'local' && (
                 <button type="button" onClick={() => local.toggleFavorite(currentItem.id)} aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'} aria-pressed={isFavorite} className={`hidden h-9 w-9 shrink-0 place-items-center rounded-full transition sm:grid ${isFavorite ? 'text-pink-400' : 'text-bone/45 hover:text-pink-300'}`}>

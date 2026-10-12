@@ -114,7 +114,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolumeState] = useState(0.85);
+  const [volume, setVolumeState] = useState(1);
   const [repeat, setRepeat] = useState<RepeatMode>('all');
   const [shuffle, setShuffle] = useState(false);
   const [error, setError] = useState('');
@@ -146,7 +146,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     setPlaying(isPlaying);
     setTime(Number.isFinite(current) ? Math.max(0, current) : 0);
     setDuration(Number.isFinite(total) ? Math.max(0, total) : 0);
-    setVolumeState(Number.isFinite(kit.player.volume) ? kit.player.volume : 0.85);
+    setVolumeState(Number.isFinite(kit.player.volume) ? kit.player.volume : 1);
   }, []);
 
   const attachMusicKitListeners = useCallback((kit: MusicKitInstance) => {

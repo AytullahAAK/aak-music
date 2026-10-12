@@ -88,11 +88,16 @@ export default function YouTubeVideoModal({ video, onClose, onPlayAudio, inline 
 
   useEffect(() => {
     let cancelled = false;
-    void loadYouTubeApi().then(() => {
-      if (cancelled || !mountRef.current) return;
+    let apiLoaded = false;
+    let playerCreated = false;
+    let inlineSurface: HTMLDivElement | null = null;
+    let inlineMount: HTMLDivElement | null = null;
+    const createPlayer = (mount: HTMLElement) => {
+      if (cancelled || playerCreated) return;
       const youtubeWindow = window as YouTubeWindow;
       if (!youtubeWindow.YT?.Player) throw new Error('YouTube player is unavailable.');
-      playerRef.current = new youtubeWindow.YT.Player(mountRef.current, {
+      playerCreated = true;
+      playerRef.current = new youtubeWindow.YT.Player(mount, {
         width: '100%',
         height: '100%',
         videoId: video.id,
@@ -116,6 +121,64 @@ export default function YouTubeVideoModal({ video, onClose, onPlayAudio, inline 
           onError: ({ data }) => { const message = errorText(data); setPlayerError(message); onError?.(message); onPlayback?.(2, 0, 0); },
         },
       });
+    };
+
+    const findInlineSlot = () => {
+      if (!inline) return null;
+      const slots = Array.from(document.querySelectorAll<HTMLElement>('[data-aak-youtube-player-slot]'));
+      return slots
+        .filter((slot) => {
+          if (!slot.isConnected || getComputedStyle(slot).display === 'none' || getComputedStyle(slot).visibility === 'hidden') return false;
+          const rect = slot.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        })
+        .sort((a, b) => {
+          const first = a.getBoundingClientRect();
+          const second = b.getBoundingClientRect();
+          return second.width * second.height - first.width * first.height;
+        })[0] ?? null;
+    };
+
+    const placeInlineSurface = () => {
+      if (!inline || cancelled || !inlineSurface || !inlineMount) return;
+      const slot = findInlineSlot();
+      if (!slot) return;
+      // The official iframe and its stable host live inside the active React
+      // slot. Moving this unmanaged surface preserves the same YT.Player and
+      // iframe instance while the app switches between dock and watch view.
+      if (inlineSurface.parentElement !== slot) slot.appendChild(inlineSurface);
+      if (apiLoaded && !playerCreated) createPlayer(inlineMount);
+    };
+
+    let mutations: MutationObserver | null = null;
+    let frame = 0;
+    if (inline) {
+      inlineSurface = document.createElement('div');
+      inlineSurface.className = 'aak-youtube-surface';
+      inlineSurface.setAttribute('aria-label', `Official YouTube player: ${video.title}`);
+      inlineMount = document.createElement('div');
+      inlineMount.className = 'aak-youtube-surface__mount';
+      inlineSurface.appendChild(inlineMount);
+      const root = document.getElementById('root') || document.body;
+      mutations = typeof MutationObserver !== 'undefined' ? new MutationObserver(() => {
+        if (frame) cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => { frame = 0; placeInlineSurface(); });
+      }) : null;
+      mutations?.observe(root, { childList: true, subtree: true });
+      window.addEventListener('resize', placeInlineSurface);
+      window.addEventListener('orientationchange', placeInlineSurface);
+      placeInlineSurface();
+    }
+
+    void loadYouTubeApi().then(() => {
+      if (cancelled) return;
+      apiLoaded = true;
+      if (inline) {
+        placeInlineSurface();
+        return;
+      }
+      if (!mountRef.current) return;
+      createPlayer(mountRef.current);
     }).catch((error: unknown) => {
       if (!cancelled) {
         const message = error instanceof Error ? error.message : 'YouTube player is unavailable.';
@@ -125,17 +188,22 @@ export default function YouTubeVideoModal({ video, onClose, onPlayAudio, inline 
     });
     return () => {
       cancelled = true;
+      if (frame) cancelAnimationFrame(frame);
+      mutations?.disconnect();
+      if (inline) {
+        window.removeEventListener('resize', placeInlineSurface);
+        window.removeEventListener('orientationchange', placeInlineSurface);
+      }
       if (pollRef.current !== null) window.clearInterval(pollRef.current);
       pollRef.current = null;
       onController?.(null);
       playerRef.current?.destroy();
       playerRef.current = null;
+      inlineSurface?.remove();
     };
   }, [video.id, video.title, autoPlay, onController, onPlayback, onError]);
 
-  if (inline) return <div className="relative h-full min-h-[200px] w-full min-w-0 bg-black" aria-label={`YouTube video: ${video.title}`}>
-    <div ref={mountRef} className="absolute inset-0 h-full w-full" />
-  </div>;
+  if (inline) return null;
 
   const contents = <>
     <header className="flex items-start justify-between gap-4 border-b border-bone/10 px-4 py-4 sm:px-8">

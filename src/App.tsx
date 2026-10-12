@@ -19,6 +19,7 @@ const MusicPage = lazy(() => import('./pages/MusicPage'));
 const PlayerPage = lazy(() => import('./pages/PlayerPage'));
 const StudioPage = lazy(() => import('./pages/StudioPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
+const InstallPage = lazy(() => import('./pages/InstallPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 function ApplicationShell() {
@@ -36,14 +37,16 @@ function ApplicationShell() {
     '/player': PlayerPage,
     '/studio': StudioPage,
     '/about': AboutPage,
+    '/install': InstallPage,
   };
   const Page = pages[pathname] || NotFoundPage;
 
   useEffect(() => {
     const previous = previousPath.current;
     if (previous !== pathname) {
-      if (pathname === '/player') setIsExpanded(true);
-      else if (previous === '/player') setIsExpanded(false);
+      // Player playback is an explicit presentation. Returning to /player
+      // starts at discovery; users can restore the watch view from the dock.
+      if (previous === '/player' && pathname !== '/player') setIsExpanded(false);
       previousPath.current = pathname;
     }
     const hash = window.location.hash.slice(1);

@@ -8,6 +8,8 @@ import {
 import type { LaneId, LoopComposition, ScaleName } from '../utils/loopPatterns';
 import { fadeLoopAudio, prepareLoopAudio, scheduleLoopStep } from '../utils/loopAudio';
 import { claimPlayback, getPlaybackOwner, setPlaybackOwner } from '../utils/audioBus';
+import { usePlayer } from '../hooks/usePlayer';
+import { useUniversalPlayer } from '../hooks/useUniversalPlayer';
 
 const STORAGE_KEY = 'aak-loop-studio-project-v1';
 const panel = 'rounded-2xl border border-bone/10 bg-raised/45 p-4 sm:p-5';
@@ -16,13 +18,25 @@ const smallButton = 'min-h-11 rounded-lg border border-bone/15 px-3 text-xs font
 export default function LoopStudio() {
   const [composition, setComposition] = useState<LoopComposition>(createStarterComposition);
   const [running, setRunning] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [playhead, setPlayhead] = useState<number | null>(null);
   const [prompt, setPrompt] = useState('Dark melodic techno at 126 BPM in F minor with a powerful kick, rolling bass and atmospheric chords.');
   const [message, setMessage] = useState('');
   const [audioError, setAudioError] = useState('');
+  const [confirmMusicPause, setConfirmMusicPause] = useState(false);
+  const localPlayback = usePlayer();
+  const universalPlayback = useUniversalPlayer();
+  const musicIsPlaying = localPlayback.playing || universalPlayback.playing || universalPlayback.videoPlaying;
   const compositionRef = useRef(composition);
   const playheadTimers = useRef(new Set<number>());
+  const startPending = useRef(false);
+  const mounted = useRef(true);
   compositionRef.current = composition;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => {
     const stopForAnotherSource = (event: Event) => {
@@ -81,15 +95,27 @@ export default function LoopStudio() {
 
   const update = (next: (current: LoopComposition) => LoopComposition) => setComposition((current) => next(current));
   const start = async () => {
-    claimPlayback('loop-studio');
+    if (running || startPending.current) return;
+    startPending.current = true;
+    setStarting(true);
     try {
       await prepareLoopAudio();
+      if (!mounted.current) return;
+      // A running YouTube iframe reports its pause asynchronously. Wait for the
+      // official state event before handing audio ownership to the sequencer.
+      await universalPlayback.pauseForLoopStudio();
+      if (!mounted.current) return;
+      // Do not pause local/provider playback until the loop engine is ready.
+      claimPlayback('loop-studio');
       fadeLoopAudio(false);
       setAudioError('');
       setRunning(true);
     } catch (error) {
       if (getPlaybackOwner() === 'loop-studio') setPlaybackOwner('none');
-      setAudioError(error instanceof Error ? error.message : 'This browser could not start audio.');
+      if (mounted.current) setAudioError(error instanceof Error ? error.message : 'This browser could not start audio.');
+    } finally {
+      startPending.current = false;
+      if (mounted.current) setStarting(false);
     }
   };
   const stop = () => {
@@ -209,7 +235,12 @@ export default function LoopStudio() {
         <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(18rem,.8fr)]">
           <div className="min-w-0 space-y-4">
             <div className={`${panel} flex min-w-0 flex-wrap items-center gap-3`}>
-              {running ? <button className="min-h-11 rounded-lg bg-cyan px-4 text-sm font-bold text-ink" onClick={stop}>STOP</button> : <button className="min-h-11 rounded-lg bg-cyan px-4 text-sm font-bold text-ink" onClick={() => void start()}>START LOOP</button>}
+              {running ? <button className="min-h-11 rounded-lg bg-cyan px-4 text-sm font-bold text-ink" onClick={stop}>STOP</button> : <button disabled={starting} className="min-h-11 rounded-lg bg-cyan px-4 text-sm font-bold text-ink disabled:cursor-wait disabled:opacity-60" onClick={() => { if (musicIsPlaying) setConfirmMusicPause(true); else void start(); }}>{starting ? 'STARTING LOOP…' : 'START LOOP'}</button>}
+              {confirmMusicPause && <div role="status" aria-live="polite" className="order-last flex w-full flex-wrap items-center gap-2 rounded-xl border border-amber-200/20 bg-ink/95 p-3 text-xs text-bone/75 sm:order-none sm:w-auto">
+                <span className="min-w-0 flex-1">Starting the loop pauses the current music source because the player audio engines are exclusive.</span>
+                <button type="button" disabled={starting} className="min-h-10 rounded-full bg-cyan px-3 font-semibold text-ink disabled:opacity-60" onClick={() => { setConfirmMusicPause(false); void start(); }}>{starting ? 'Starting loop…' : 'Start and pause music'}</button>
+                <button type="button" className="min-h-10 rounded-full border border-bone/15 px-3" onClick={() => setConfirmMusicPause(false)}>Cancel</button>
+              </div>}
               <label className="flex min-h-11 items-center gap-2 rounded-lg border border-bone/15 px-3 text-xs font-mono">
                 <span>BPM</span><input aria-label="Tempo in BPM" type="number" min="40" max="220" value={composition.bpm} onChange={(event) => update((current) => ({ ...current, bpm: Math.max(40, Math.min(220, Number(event.target.value) || 40)) }))} className="w-14 bg-transparent text-center text-sm text-bone outline-none" />
               </label>

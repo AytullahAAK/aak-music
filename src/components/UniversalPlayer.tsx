@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { tracks } from '../data';
 import { fmt, usePlayer, useTime } from '../hooks/usePlayer';
 import { useUniversalPlayer, useUniversalPlayerTime } from '../hooks/useUniversalPlayer';
@@ -9,17 +10,135 @@ import EqualizerControl from './EqualizerControl';
 import FullPlayerModal from './FullPlayerModal';
 import YouTubeVideoModal from './YouTubeVideoModal';
 import QueuePanel from './QueuePanel';
+import { useLocation } from '../router';
+
+type MiniPlayerPosition = { x: number; y: number };
+type MiniPlayerDrag = { pointerId: number; startX: number; startY: number; originX: number; originY: number; width: number; height: number };
+const MINI_PLAYER_POSITION_KEY = 'aak-mini-player-position-v1';
+
+interface DocumentPictureInPictureApi {
+  window: Window | null;
+  requestWindow: (options?: { width?: number; height?: number; preferInitialWindowPlacement?: boolean }) => Promise<Window>;
+}
+
+type PictureInPictureWindow = Window & { documentPictureInPicture?: DocumentPictureInPictureApi };
+
+function supportsDocumentPictureInPicture() {
+  return typeof window !== 'undefined' && window.isSecureContext &&
+    typeof (window as PictureInPictureWindow).documentPictureInPicture?.requestWindow === 'function';
+}
+
+function copyPlayerStyles(target: Window) {
+  const targetDocument = target.document;
+  targetDocument.documentElement.dataset.theme = document.documentElement.dataset.theme || 'dark';
+  targetDocument.documentElement.dataset.performanceMode = document.documentElement.dataset.performanceMode || 'balance';
+  targetDocument.documentElement.lang = document.documentElement.lang || 'en';
+  document.head.querySelectorAll('link[rel="stylesheet"], style').forEach((source) => {
+    targetDocument.head.appendChild(source.cloneNode(true));
+  });
+  const style = targetDocument.createElement('style');
+  style.textContent = `
+    html, body, #aak-floating-player-root { width:100%; height:100%; margin:0; overflow:hidden; }
+    body { background:rgb(var(--bg, 14 12 25)); color:rgb(var(--fg, 238 235 248)); font:13px/1.4 Inter, ui-sans-serif, system-ui, sans-serif; }
+    .aak-pip { box-sizing:border-box; display:grid; grid-template-rows:auto minmax(0,1fr) auto; gap:9px; width:100%; height:100%; min-width:0; padding:12px; }
+    .aak-pip__head { display:flex; align-items:center; justify-content:space-between; gap:8px; color:rgb(var(--accent2, 95 212 255)); font:600 9px/1 ui-monospace,monospace; letter-spacing:.16em; text-transform:uppercase; }
+    .aak-pip__close,.aak-pip__button { display:grid; place-items:center; border:1px solid rgb(var(--fg)/.17); border-radius:999px; background:rgb(var(--surface, 21 18 37)); color:rgb(var(--fg)); cursor:pointer; }
+    .aak-pip__close { width:30px; height:30px; }
+    .aak-pip__content { display:flex; align-items:center; gap:12px; min-width:0; overflow:hidden; }
+    .aak-pip__art { width:76px; height:76px; flex:none; border-radius:12px; background:rgb(var(--raised, 30 26 52)); object-fit:cover; }
+    .aak-pip__meta { min-width:0; flex:1; }
+    .aak-pip__title { overflow:hidden; color:rgb(var(--fg)); font-weight:700; text-overflow:ellipsis; white-space:nowrap; }
+    .aak-pip__artist { overflow:hidden; margin-top:3px; color:rgb(var(--fg)/.68); text-overflow:ellipsis; white-space:nowrap; }
+    .aak-pip__provider { margin-top:5px; color:rgb(var(--accent2)); font:9px/1.2 ui-monospace,monospace; text-transform:uppercase; letter-spacing:.08em; }
+    .aak-pip__controls { display:flex; align-items:center; gap:8px; }
+    .aak-pip__button { width:34px; height:34px; }
+    .aak-pip__button--play { width:42px; height:42px; border:0; background:rgb(var(--fg)); color:rgb(var(--bg)); }
+    .aak-pip__timeline { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:7px; color:rgb(var(--fg)/.6); font:9px/1 ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+    .aak-pip__seek { width:100%; min-width:0; height:4px; accent-color:rgb(var(--accent2)); cursor:pointer; }
+    .aak-pip button:focus-visible,.aak-pip input:focus-visible { outline:2px solid rgb(var(--accent2)); outline-offset:2px; }
+    @media (prefers-reduced-motion:reduce) { .aak-pip * { transition:none!important; animation:none!important; } }
+  `;
+  targetDocument.head.appendChild(style);
+  targetDocument.body.replaceChildren();
+  const mount = targetDocument.createElement('div');
+  mount.id = 'aak-floating-player-root';
+  targetDocument.body.appendChild(mount);
+  return mount;
+}
+
+function FloatingPlayerSurface({
+  title, artist, image, provider, playing, currentTime, duration, volume, canSeek,
+  onToggle, onPrevious, onNext, onSeek, onVolume, onClose,
+}: {
+  title: string; artist: string; image?: string; provider: string; playing: boolean;
+  currentTime: number; duration: number; volume: number; canSeek: boolean;
+  onToggle: () => void; onPrevious: () => void; onNext: () => void;
+  onSeek: (seconds: number) => void; onVolume: (value: number) => void; onClose: () => void;
+}) {
+  return <div className="aak-pip" aria-label="AAK Music browser floating player">
+    <div className="aak-pip__head"><span>AAK Music · Floating player</span><button className="aak-pip__close" type="button" aria-label="Close floating player window" title="Close floating window" onClick={onClose}><Icon n="close" s={15} /></button></div>
+    <div className="aak-pip__content">
+      {image ? <img className="aak-pip__art" src={image} alt="" /> : <div className="aak-pip__art" aria-hidden="true" />}
+      <div className="aak-pip__meta"><div className="aak-pip__title" title={title}>{title}</div><div className="aak-pip__artist" title={artist}>{artist}</div><div className="aak-pip__provider">{provider}</div>
+        <div className="aak-pip__controls" style={{ marginTop: 8 }}>
+          <button className="aak-pip__button" type="button" aria-label="Previous track" title="Previous track" onClick={onPrevious}><Icon n="prev" s={15} /></button>
+          <button className="aak-pip__button aak-pip__button--play" type="button" aria-label={playing ? 'Pause' : 'Play'} title={playing ? 'Pause' : 'Play'} onClick={onToggle}><Icon n={playing ? 'pause' : 'play'} s={17} /></button>
+          <button className="aak-pip__button" type="button" aria-label="Next track" title="Next track" onClick={onNext}><Icon n="next" s={15} /></button>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, marginLeft: 'auto' }} title="Volume"><Icon n={volume <= 0.01 ? 'muted' : 'volume'} s={14} /><input aria-label="Player volume" type="range" min={0} max={1} step={0.01} value={volume} onChange={(event) => onVolume(Number(event.currentTarget.value))} style={{ width: 54, accentColor: 'rgb(var(--accent2))' }} /></label>
+        </div>
+      </div>
+    </div>
+    <div className="aak-pip__timeline"><span>{fmt(currentTime)}</span><input aria-label="Seek track position" className="aak-pip__seek" type="range" min={0} max={duration || 1} step={0.1} value={Math.min(currentTime, duration || 0)} disabled={!canSeek} onChange={(event) => onSeek(Number(event.currentTarget.value))} /><span>{fmt(duration)}</span></div>
+  </div>;
+}
+
+function readMiniPlayerPosition(): MiniPlayerPosition | null {
+  try {
+    const saved = localStorage.getItem(MINI_PLAYER_POSITION_KEY);
+    if (!saved) return null;
+    const value: unknown = JSON.parse(saved);
+    if (!value || typeof value !== 'object') return null;
+    const { x, y } = value as Record<string, unknown>;
+    return typeof x === 'number' && Number.isFinite(x) && typeof y === 'number' && Number.isFinite(y)
+      ? { x, y }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function clampMiniPlayerPosition(x: number, y: number, width: number, height: number): MiniPlayerPosition {
+  const margin = 8;
+  return {
+    x: Math.max(margin, Math.min(x, Math.max(margin, window.innerWidth - width - margin))),
+    y: Math.max(margin, Math.min(y, Math.max(margin, window.innerHeight - height - margin))),
+  };
+}
 
 export default function UniversalPlayer() {
   const local = usePlayer();
   const localTime = useTime();
   const player = useUniversalPlayer();
   const playerClock = useUniversalPlayerTime();
+  const location = useLocation();
+  const pathname = location.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
+  const isPlayerRoute = pathname === '/player';
 
   const [dismissed, setDismissed] = useState(false);
-  const [videoFrameStyle, setVideoFrameStyle] = useState<CSSProperties | null>(null);
+  const [miniPlayerPosition, setMiniPlayerPosition] = useState<MiniPlayerPosition | null>(readMiniPlayerPosition);
+  const [pipWindow, setPipWindow] = useState<Window | null>(null);
+  const [pipMount, setPipMount] = useState<HTMLElement | null>(null);
+  const [pipError, setPipError] = useState('');
+  const [titleOverflows, setTitleOverflows] = useState(false);
+  const [titleMarqueeDuration, setTitleMarqueeDuration] = useState(22);
 
   const dockRef = useRef<HTMLDivElement>(null);
+  const titleViewportRef = useRef<HTMLSpanElement>(null);
+  const titleMeasureRef = useRef<HTMLSpanElement>(null);
+  const pipWindowRef = useRef<Window | null>(null);
+  const pipRequestPendingRef = useRef(false);
+  const positionRef = useRef(miniPlayerPosition);
+  const dragRef = useRef<MiniPlayerDrag | null>(null);
   const videoVolumeRef = useRef(player.volume);
   const previousVolume = useRef(0.85);
 
@@ -46,6 +165,58 @@ export default function UniversalPlayer() {
     !dismissed
   );
 
+  // Hide the ordinary audio dock while the page is actively scrolling, then
+  // reveal it shortly after scroll settles. Keep an official YouTube player
+  // visible: moving that iframe out of view is not a compliant audio-only mode.
+  useEffect(() => {
+    const dock = dockRef.current;
+    if (!dock || !showDock || local.isExpanded || isVideoMode) {
+      dock?.removeAttribute('data-scroll-hidden');
+      return;
+    }
+    let frame = 0;
+    let revealTimer = 0;
+    let lastY = window.scrollY;
+    let direction = 0;
+    let accumulatedDelta = 0;
+    const reveal = () => {
+      window.clearTimeout(revealTimer);
+      dock.removeAttribute('data-scroll-hidden');
+    };
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        const y = window.scrollY;
+        const delta = y - lastY;
+        lastY = y;
+        if (Math.abs(delta) < 1) return;
+        const nextDirection = Math.sign(delta);
+        if (nextDirection !== direction) accumulatedDelta = 0;
+        direction = nextDirection;
+        accumulatedDelta += delta;
+        if (Math.abs(accumulatedDelta) < 12) return;
+        if (accumulatedDelta > 0) dock.dataset.scrollHidden = 'true';
+        else reveal();
+        accumulatedDelta = 0;
+        window.clearTimeout(revealTimer);
+        revealTimer = window.setTimeout(reveal, 550);
+      });
+    };
+    const onInteraction = () => reveal();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    dock.addEventListener('pointerdown', onInteraction);
+    dock.addEventListener('focusin', onInteraction);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      dock.removeEventListener('pointerdown', onInteraction);
+      dock.removeEventListener('focusin', onInteraction);
+      window.clearTimeout(revealTimer);
+      if (frame) window.cancelAnimationFrame(frame);
+      dock.removeAttribute('data-scroll-hidden');
+    };
+  }, [isVideoMode, local.isExpanded, showDock]);
+
   const onVideoPlayback = useCallback(
     (state: number, time: number, total: number) => player.syncVideo(state, time, total),
     [player.syncVideo]
@@ -64,55 +235,115 @@ export default function UniversalPlayer() {
     [player.setError]
   );
 
-  // Synchronize YouTube video placement over the dock or full player slot
-  useEffect(() => {
-    if (!isVideoMode) {
-      setVideoFrameStyle(null);
-      return;
-    }
-    let animation = 0;
-    const updateFrame = () => {
-      cancelAnimationFrame(animation);
-      animation = requestAnimationFrame(() => {
-        const slot = document.querySelector<HTMLElement>('[data-aak-youtube-player-slot]');
-        if (!slot) {
-          setVideoFrameStyle(null);
-          return;
-        }
-        const rect = slot.getBoundingClientRect();
-        if (rect.width < 180 || rect.height < 120) {
-          setVideoFrameStyle(null);
-          return;
-        }
-        setVideoFrameStyle({
-          position: 'fixed',
-          left: rect.left,
-          top: rect.top,
-          width: rect.width,
-          height: rect.height,
-          zIndex: 120,
-        });
-      });
+  // The dock uses viewport coordinates so it can be moved freely. Revalidate
+  // the saved point after mount and whenever its dimensions or viewport change.
+  useLayoutEffect(() => {
+    const dock = dockRef.current;
+    if (!dock || !showDock) return;
+
+    const updateBounds = () => {
+      const rect = dock.getBoundingClientRect();
+      if (dragRef.current) {
+        dragRef.current.width = rect.width;
+        dragRef.current.height = rect.height;
+      }
+      const current = positionRef.current ?? { x: rect.left, y: rect.top };
+      const next = clampMiniPlayerPosition(current.x, current.y, rect.width, rect.height);
+      dock.style.left = `${next.x}px`;
+      dock.style.top = `${next.y}px`;
+      dock.style.right = 'auto';
+      dock.style.bottom = 'auto';
+      positionRef.current = next;
+      setMiniPlayerPosition((previous) => previous?.x === next.x && previous?.y === next.y ? previous : next);
     };
 
-    const slot = document.querySelector<HTMLElement>('[data-aak-youtube-player-slot]');
-    const observer = slot && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateFrame) : null;
-    const mutations = typeof MutationObserver !== 'undefined' ? new MutationObserver(updateFrame) : null;
-    if (slot) observer?.observe(slot);
-    mutations?.observe(document.getElementById('root') || document.body, { childList: true, subtree: true });
-
-    window.addEventListener('resize', updateFrame);
-    window.addEventListener('scroll', updateFrame, true);
-    updateFrame();
-
+    updateBounds();
+    let frame = 0;
+    const scheduleBounds = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => { frame = 0; updateBounds(); });
+    };
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(scheduleBounds) : null;
+    observer?.observe(dock);
+    window.addEventListener('resize', scheduleBounds);
+    window.addEventListener('orientationchange', scheduleBounds);
+    window.visualViewport?.addEventListener('resize', scheduleBounds);
+    window.visualViewport?.addEventListener('scroll', scheduleBounds);
     return () => {
-      cancelAnimationFrame(animation);
       observer?.disconnect();
-      mutations?.disconnect();
-      window.removeEventListener('resize', updateFrame);
-      window.removeEventListener('scroll', updateFrame, true);
+      window.removeEventListener('resize', scheduleBounds);
+      window.removeEventListener('orientationchange', scheduleBounds);
+      window.visualViewport?.removeEventListener('resize', scheduleBounds);
+      window.visualViewport?.removeEventListener('scroll', scheduleBounds);
+      if (frame) cancelAnimationFrame(frame);
     };
-  }, [isVideoMode, video?.id, local.isExpanded]);
+  }, [showDock, local.isExpanded, video?.id, isVideoMode]);
+
+  const applyMiniPlayerPosition = (position: MiniPlayerPosition, persist: boolean, size?: Pick<MiniPlayerDrag, 'width' | 'height'>) => {
+    const dock = dockRef.current;
+    if (!dock) return;
+    const rect = size ? null : dock.getBoundingClientRect();
+    const next = clampMiniPlayerPosition(position.x, position.y, size?.width ?? rect!.width, size?.height ?? rect!.height);
+    dock.style.left = `${next.x}px`;
+    dock.style.top = `${next.y}px`;
+    dock.style.right = 'auto';
+    dock.style.bottom = 'auto';
+    positionRef.current = next;
+    if (persist) {
+      setMiniPlayerPosition(next);
+      try { localStorage.setItem(MINI_PLAYER_POSITION_KEY, JSON.stringify(next)); } catch { /* Storage can be unavailable in private browsing. */ }
+    }
+  };
+
+  const beginMiniPlayerDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    const dock = dockRef.current;
+    if (!dock) return;
+    const rect = dock.getBoundingClientRect();
+    const origin = positionRef.current ?? { x: rect.left, y: rect.top };
+    dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: origin.x, originY: origin.y, width: rect.width, height: rect.height };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const moveMiniPlayerDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    applyMiniPlayerPosition({
+      x: drag.originX + event.clientX - drag.startX,
+      y: drag.originY + event.clientY - drag.startY,
+    }, false, drag);
+  };
+
+  const finishMiniPlayerDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    const dock = dockRef.current;
+    const rect = dock?.getBoundingClientRect();
+    if (rect) applyMiniPlayerPosition({ x: rect.left, y: rect.top }, true);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
+  const moveMiniPlayerByKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    const amount = event.shiftKey ? 48 : 16;
+    const rect = dockRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const current = positionRef.current ?? { x: rect.left, y: rect.top };
+    const directions: Record<string, MiniPlayerPosition> = {
+      ArrowLeft: { x: current.x - amount, y: current.y },
+      ArrowRight: { x: current.x + amount, y: current.y },
+      ArrowUp: { x: current.x, y: current.y - amount },
+      ArrowDown: { x: current.x, y: current.y + amount },
+    };
+    const next = directions[event.key];
+    if (!next) return;
+    event.preventDefault();
+    applyMiniPlayerPosition(next, true);
+  };
+
+  useEffect(() => () => { dragRef.current = null; }, []);
 
   // Global Keyboard shortcuts
   useEffect(() => {
@@ -156,6 +387,38 @@ export default function UniversalPlayer() {
   const title = currentItem.title;
   const artist = currentItem.artist;
   const provider = currentItem.provider;
+
+  // Measure only the title and its available viewport. CSS handles the motion;
+  // ResizeObserver covers track changes and responsive dock resizing without a timer loop.
+  useLayoutEffect(() => {
+    const viewport = titleViewportRef.current;
+    const measure = titleMeasureRef.current;
+    if (!showDock || !viewport || !measure) {
+      setTitleOverflows(false);
+      return;
+    }
+    const update = () => {
+      const measuredWidth = measure.getBoundingClientRect().width;
+      const trailingGap = Number.parseFloat(window.getComputedStyle(measure).paddingRight) || 0;
+      const textWidth = Math.max(0, measuredWidth - trailingGap);
+      const overflowing = textWidth > viewport.clientWidth + 1;
+      setTitleOverflows((current) => current === overflowing ? current : overflowing);
+      if (overflowing) {
+        const duration = Math.max(16, Math.min(42, (textWidth / 22) + 6));
+        setTitleMarqueeDuration((current) => Math.abs(current - duration) < 0.5 ? current : duration);
+      }
+    };
+    update();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    observer?.observe(viewport);
+    observer?.observe(measure);
+    window.addEventListener('resize', update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', update);
+    };
+  }, [showDock, title]);
+
   const isPlaying = video ? player.videoPlaying : external ? player.playing : local.playing;
   const currentTime = video ? playerClock.videoTime : external ? playerClock.time : localTime.t;
   const duration = video
@@ -179,6 +442,90 @@ export default function UniversalPlayer() {
   const seek = video ? player.seekVideo : external ? player.seek : local.seek;
   const previous = () => player.prev();
   const next = () => player.next();
+
+  const hasFloatingAudioSource = !video && Boolean(external || (currentItem.kind === 'local' && local.hasInitiatedPlayback && local.track.src));
+  const canOpenBrowserPip = hasFloatingAudioSource && supportsDocumentPictureInPicture();
+
+  const openBrowserPip = useCallback(async () => {
+    if (pipWindowRef.current) {
+      pipWindowRef.current.close();
+      return;
+    }
+    if (!canOpenBrowserPip || pipRequestPendingRef.current) return;
+    pipRequestPendingRef.current = true;
+    setPipError('');
+    try {
+      // requestWindow is called directly from this user activation, as required
+      // by browsers. It creates a browser-managed always-on-top document window.
+      const api = (window as PictureInPictureWindow).documentPictureInPicture;
+      if (!api) throw new Error('Picture-in-Picture API is unavailable.');
+      // These are initial preferred dimensions for AAK's custom audio Document
+      // PiP window. The browser may constrain them; this does not size YouTube's
+      // separate provider-managed PiP window.
+      const nextWindow = await api.requestWindow({ width: 390, height: 190 });
+      if (video || !hasFloatingAudioSource) {
+        nextWindow.close();
+        return;
+      }
+      const mount = copyPlayerStyles(nextWindow);
+      pipWindowRef.current = nextWindow;
+      nextWindow.addEventListener('pagehide', () => {
+        if (pipWindowRef.current === nextWindow) pipWindowRef.current = null;
+        setPipWindow((current) => current === nextWindow ? null : current);
+        setPipMount(null);
+      }, { once: true });
+      setPipMount(mount);
+      setPipWindow(nextWindow);
+    } catch (error) {
+      const name = error instanceof DOMException ? error.name : '';
+      setPipError(name === 'NotAllowedError'
+        ? 'The browser blocked the floating window. Try again directly from this button.'
+        : 'The browser could not open a floating window. Continue using the in-page player.');
+    } finally {
+      pipRequestPendingRef.current = false;
+    }
+  }, [canOpenBrowserPip, video, hasFloatingAudioSource]);
+
+  useEffect(() => {
+    pipWindowRef.current = pipWindow;
+  }, [pipWindow]);
+
+  useEffect(() => () => { pipWindowRef.current?.close(); }, []);
+
+  useEffect(() => {
+    if ((video || !hasFloatingAudioSource) && pipWindow) pipWindow.close();
+  }, [video, hasFloatingAudioSource, pipWindow]);
+
+  useEffect(() => {
+    if (!pipWindow) return;
+    const syncRootPreferences = () => {
+      pipWindow.document.documentElement.dataset.theme = document.documentElement.dataset.theme || 'dark';
+      pipWindow.document.documentElement.dataset.performanceMode = document.documentElement.dataset.performanceMode || 'balance';
+    };
+    syncRootPreferences();
+    const observer = new MutationObserver(syncRootPreferences);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-performance-mode'] });
+    return () => observer.disconnect();
+  }, [pipWindow]);
+
+  // Recent desktop Chrome can request a PiP transition when media is playing
+  // and the user switches tabs. Register only for supported, active audio;
+  // Chrome still applies its own eligibility checks and user permission.
+  useEffect(() => {
+    if (!canOpenBrowserPip || !hasFloatingAudioSource || !isPlaying || !('mediaSession' in navigator)) return;
+    const session = navigator.mediaSession;
+    const setActionHandler = session.setActionHandler as unknown as (action: string, handler: (() => void) | null) => void;
+    const enterPip = () => { void openBrowserPip(); };
+    try {
+      setActionHandler.call(session, 'enterpictureinpicture', enterPip);
+    } catch {
+      // Media Session PiP actions are not implemented by every browser.
+      return;
+    }
+    return () => {
+      try { setActionHandler.call(session, 'enterpictureinpicture', null); } catch { /* Unsupported action. */ }
+    };
+  }, [canOpenBrowserPip, hasFloatingAudioSource, isPlaying, openBrowserPip]);
 
   const toggleShuffle = () =>
     video || external ? player.setShuffle(!shuffle) : local.toggleShuffle();
@@ -213,7 +560,7 @@ export default function UniversalPlayer() {
   return (
     <>
       {/* Full Player Modal */}
-      {local.isExpanded && <FullPlayerModal />}
+      {local.isExpanded && !isPlayerRoute && <FullPlayerModal />}
 
       {/* Shared Playback Queue Drawer */}
       <QueuePanel />
@@ -225,12 +572,50 @@ export default function UniversalPlayer() {
           role="region"
           aria-label="AAK Music mini player"
           className={`aak-mini-player fixed z-50 text-bone ${video && player.videoMode ? 'aak-mini-player--video' : ''}`}
+          style={miniPlayerPosition ? { left: miniPlayerPosition.x, top: miniPlayerPosition.y, right: 'auto', bottom: 'auto' } : undefined}
         >
+          <div className="aak-mini-player__header">
+            {canOpenBrowserPip && (
+              <button
+                type="button"
+                onClick={() => void openBrowserPip()}
+                aria-label={pipWindow ? 'Close Picture-in-Picture window' : 'Open Picture-in-Picture'}
+                title={pipWindow ? 'Close Picture-in-Picture' : 'Picture-in-Picture'}
+                aria-pressed={Boolean(pipWindow)}
+                className={`aak-mini-player__pip-button ${pipWindow ? 'is-active' : ''}`}
+              >
+                <Icon n="pip" s={16} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="aak-mini-player__drag-handle"
+              aria-label="Move mini player. Use the arrow keys to reposition it."
+              title="Move mini player · Arrow keys to reposition"
+              onPointerDown={beginMiniPlayerDrag}
+              onPointerMove={moveMiniPlayerDrag}
+              onPointerUp={finishMiniPlayerDrag}
+              onPointerCancel={finishMiniPlayerDrag}
+              onLostPointerCapture={finishMiniPlayerDrag}
+              onKeyDown={moveMiniPlayerByKeyboard}
+            >
+              <Icon n="move" s={15} />
+            </button>
+            <button
+              type="button"
+              onClick={handleDismiss}
+              aria-label="Pause and hide mini player"
+              title="Pause and hide mini player"
+              className="aak-mini-player__header-button aak-mini-player__close-button"
+            >
+              <Icon n="close" s={16} />
+            </button>
+          </div>
           {video && player.videoMode && (
             <div
               data-aak-youtube-player-slot
               aria-label={`Official YouTube player: ${video.title}`}
-              className="aak-mini-player__video-slot mx-auto aspect-video w-full bg-black"
+              className="aak-mini-player__video-slot mx-auto w-full bg-black"
             />
           )}
 
@@ -268,8 +653,15 @@ export default function UniversalPlayer() {
                 </span>
               </button>
               <div className="min-w-0 flex-1">
-                <button type="button" onClick={() => local.setIsExpanded(true)} className="block w-full truncate text-left font-display text-sm font-bold leading-tight text-bone transition hover:text-cyan" title={title}>{title}</button>
-                <p className="mt-1 truncate text-xs text-bone/60" title={artist}>{artist}</p>
+                <button type="button" onClick={() => local.setIsExpanded(true)} className="aak-mini-player__title-button block w-full min-w-0 text-left font-display text-sm font-bold leading-tight text-bone transition hover:text-cyan" title={title} aria-label={title}>
+                  <span ref={titleViewportRef} className="aak-mini-player__title-viewport">
+                    <span key={title} className={`aak-mini-player__title-track ${titleOverflows ? 'is-overflowing' : ''}`} style={{ animationDuration: `${titleMarqueeDuration}s` }}>
+                      <span ref={titleMeasureRef} className="aak-mini-player__title-copy">{title}</span>
+                      {titleOverflows && <span aria-hidden="true" className="aak-mini-player__title-copy aak-mini-player__title-copy--duplicate">{title}</span>}
+                    </span>
+                  </span>
+                </button>
+                <p className="aak-mini-player__artist mt-1 truncate text-xs" title={artist}>{artist}</p>
                 <span className="mt-1 inline-flex max-w-full truncate rounded-md bg-cyan/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-cyan">{provider}</span>
               </div>
               {!video && currentItem.kind === 'local' && (
@@ -289,25 +681,25 @@ export default function UniversalPlayer() {
             <div className="aak-mini-player__actions">
               <button type="button" onClick={toggleShuffle} aria-label={shuffle ? 'Turn shuffle off' : 'Turn shuffle on'} aria-pressed={shuffle} title="Shuffle" className={`aak-mini-player__control aak-mini-player__secondary ${shuffle ? 'bg-cyan/10 text-cyan' : 'text-bone/55 hover:text-bone'}`}><Icon n="shuffle" s={16} /></button>
               <button type="button" onClick={toggleRepeat} aria-label={`Repeat ${repeat}`} aria-pressed={repeat !== 'off'} title={`Repeat: ${repeat}`} className={`aak-mini-player__control aak-mini-player__secondary relative ${repeat !== 'off' ? 'bg-cyan/10 text-cyan' : 'text-bone/55 hover:text-bone'}`}><Icon n="repeat" s={16} />{repeat === 'one' && <span className="absolute bottom-1 right-1 text-[8px] font-bold">1</span>}</button>
-              <div className="aak-mini-player__volume hidden items-center gap-1.5 lg:flex">
+              <div className="aak-mini-player__volume items-center gap-1.5">
                 <button type="button" onClick={toggleMute} aria-label={volume <= 0.01 ? 'Unmute' : 'Mute'} className="aak-mini-player__control text-bone/55 hover:text-cyan"><Icon n={volume <= 0.01 ? 'muted' : 'volume'} s={16} /></button>
-                <input aria-label="Player volume" type="range" min={0} max={1} step={0.01} value={volume} onChange={(event) => changeVolume(Number(event.target.value))} className="h-1.5 w-16 cursor-pointer accent-cyan" />
+                <input aria-label="Player volume" type="range" min={0} max={1} step={0.01} value={volume} onChange={(event) => changeVolume(Number(event.target.value))} className="aak-mini-player__volume-slider h-1.5 w-16 cursor-pointer accent-cyan" />
               </div>
-              {!video && <div className="aak-mini-player__audio-tools hidden items-center gap-1 xl:flex"><VisualizerToolbar embedded /><div className="aak-mini-player__equalizer"><EqualizerControl available={!external} /></div></div>}
-              {video && <div className="aak-mini-player__equalizer"><EqualizerControl available={false} /></div>}
+              {!video && <div className="aak-mini-player__audio-tools flex items-center gap-1"><VisualizerToolbar embedded /><div className="aak-mini-player__equalizer"><EqualizerControl available={!external} compact /></div></div>}
+              {video && <div className="aak-mini-player__equalizer"><EqualizerControl available={false} compact /></div>}
               <button type="button" onClick={player.toggleQueue} aria-label={`Open playback queue, ${queueCount} user queued tracks`} aria-pressed={player.isQueueOpen} title="Playback queue" className={`aak-mini-player__control relative rounded-xl border border-bone/15 ${player.isQueueOpen ? 'border-cyan bg-cyan/10 text-cyan' : 'text-bone/65 hover:border-cyan hover:text-cyan'}`}>
                 <Icon n="queue" s={17} />
                 {queueCount > 0 && <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan px-1 font-mono text-[9px] font-bold text-ink">{queueCount}</span>}
               </button>
               <button type="button" onClick={() => local.setIsExpanded(true)} aria-label="Expand player" title="Expand player" className="aak-mini-player__control rounded-xl border border-bone/15 text-bone/65 hover:border-cyan hover:text-cyan"><Icon n="expand" s={16} /></button>
-              <button type="button" onClick={handleDismiss} aria-label="Pause and hide mini player" title="Pause and hide mini player" className="aak-mini-player__control aak-mini-player__dismiss rounded-xl text-bone/45 hover:bg-bone/10 hover:text-bone"><Icon n="close" s={16} /></button>
             </div>
+            {(pipError || video || (hasFloatingAudioSource && !canOpenBrowserPip)) && <p role={pipError ? 'status' : undefined} className={`aak-mini-player__pip-status ${pipError ? 'text-amber-200' : 'text-bone/45'}`}>{pipError || (video ? "Use YouTube's own Picture-in-Picture control when available; the browser and OS control its window size." : 'Picture-in-Picture is unavailable in this browser; the in-page player remains available.')}</p>}
           </div>
         </section>
       )}
       {/* Official YouTube video host frame */}
-      {video && player.videoMode && videoFrameStyle && (
-        <div className="fixed bg-black youtube-player-host" style={videoFrameStyle}>
+      {video && player.videoMode && (
+        <>
           <YouTubeVideoModal
             key={video.id}
             inline
@@ -319,7 +711,27 @@ export default function UniversalPlayer() {
             onController={onVideoController}
             onError={onVideoError}
           />
-        </div>
+        </>
+      )}
+      {pipWindow && pipMount && createPortal(
+        <FloatingPlayerSurface
+          title={title}
+          artist={artist}
+          image={currentItem.image}
+          provider={provider}
+          playing={isPlaying}
+          currentTime={currentTime}
+          duration={duration}
+          volume={volume}
+          canSeek={canSeek}
+          onToggle={playToggle}
+          onPrevious={previous}
+          onNext={next}
+          onSeek={seek}
+          onVolume={changeVolume}
+          onClose={() => pipWindowRef.current?.close()}
+        />,
+        pipMount
       )}
     </>
   );

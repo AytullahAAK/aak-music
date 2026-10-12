@@ -1,8 +1,24 @@
-import {useTheme} from '../hooks/useTheme';
-const I=({d}:{d:string})=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden><path d={d}/></svg>;
-const Moon=()=><I d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>,Sun=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>;
-export default function ThemeToggle({row,focusable=true}:{row?:boolean;focusable?:boolean}){const {theme,toggle}=useTheme(),light=theme==='light';
-if(row)return <div role="group" aria-label="Theme" className="relative mt-8 grid w-56 grid-cols-2 border border-bone/20 text-sm"><span aria-hidden className="absolute inset-y-0 left-0 w-1/2 bg-bone transition-transform duration-500 ease-out" style={{transform:`translateX(${light?'100%':'0'})`}}/>
-{(['dark','light'] as const).map(m=><button key={m} tabIndex={focusable?0:-1} aria-pressed={theme===m} onClick={()=>theme!==m&&toggle()} className={`relative flex items-center justify-center gap-2 py-3 transition-colors duration-500 ${theme===m?'text-ink':'text-bone/75'}`}>{m==='dark'?<Moon/>:<Sun/>}{m==='dark'?'Dark':'Light'}</button>)}</div>;
-return <button role="switch" aria-checked={light} aria-label="Light mode" title={light?'Switch to dark mode':'Switch to light mode'} onClick={toggle} className="relative grid h-9 w-9 place-items-center text-bone/75 transition hover:text-bone">
-<span className={`absolute transition duration-500 ${light?'rotate-90 scale-50 opacity-0':''}`}><Moon/></span><span className={`absolute transition duration-500 ${light?'':'-rotate-90 scale-50 opacity-0'}`}><Sun/></span></button>}
+import Icon from './Icon';
+import { useTheme } from '../hooks/useTheme';
+
+export default function ThemeToggle({ row, focusable = true }: { row?: boolean; focusable?: boolean }) {
+  const { theme, toggle } = useTheme();
+  const light = theme === 'light';
+
+  if (row) return (
+    <div role="group" aria-label="Color theme" className="relative grid w-[9.5rem] shrink-0 grid-cols-2 overflow-hidden rounded-lg border border-bone/10 bg-ink/40 text-xs">
+      <span aria-hidden="true" className="absolute inset-y-0 left-0 w-1/2 bg-bone transition-transform duration-200" style={{ transform: `translateX(${light ? '100%' : '0'})` }} />
+      {(['dark', 'light'] as const).map((mode) => (
+        <button key={mode} type="button" tabIndex={focusable ? 0 : -1} aria-pressed={theme === mode} onClick={() => theme !== mode && toggle()} className={`relative z-[1] flex min-h-10 items-center justify-center gap-1.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan ${theme === mode ? 'text-ink' : 'text-bone/75'}`}>
+          <Icon n={mode === 'dark' ? 'moon' : 'sun'} s={15} />{mode === 'dark' ? 'Dark' : 'Light'}
+        </button>
+      ))}
+    </div>
+  );
+
+  return (
+    <button type="button" role="switch" aria-checked={light} aria-label={light ? 'Switch to dark theme' : 'Switch to light theme'} title={light ? 'Switch to dark theme' : 'Switch to light theme'} onClick={toggle} className="relative grid h-10 w-10 place-items-center rounded-full text-bone/75 transition-colors hover:bg-bone/10 hover:text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan">
+      <Icon n={light ? 'moon' : 'sun'} s={18} />
+    </button>
+  );
+}

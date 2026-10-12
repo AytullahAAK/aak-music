@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { decorativeMotionAllowed, PERFORMANCE_MODE_EVENT } from '../utils/performanceMode';
 
 const mq = (query: string) => typeof matchMedia !== 'undefined' && matchMedia(query).matches;
 export const fine = mq('(hover:hover) and (pointer:fine)');
@@ -42,14 +43,30 @@ export function usePointerTracking() {
         root.style.setProperty('--pointer-y', `${motion.my}px`);
       });
     };
-    if (fine && !reduced) addEventListener('pointermove', onPointerMove, { passive: true });
+    const preference = matchMedia('(prefers-reduced-motion: reduce)');
+    let pointerListening = false;
+    const syncPointerPreference = () => {
+      const enabled = fine && decorativeMotionAllowed();
+      if (enabled === pointerListening) return;
+      pointerListening = enabled;
+      if (enabled) addEventListener('pointermove', onPointerMove, { passive: true });
+      else {
+        removeEventListener('pointermove', onPointerMove);
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      }
+    };
+    syncPointerPreference();
+    window.addEventListener(PERFORMANCE_MODE_EVENT, syncPointerPreference);
+    preference.addEventListener('change', syncPointerPreference);
 
     return () => {
       window.removeEventListener('resize', updateViewport);
       viewportObserver.disconnect();
       visualViewport?.removeEventListener('resize', updateViewport);
       visualViewport?.removeEventListener('scroll', updateViewport);
-      if (fine && !reduced) removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener(PERFORMANCE_MODE_EVENT, syncPointerPreference);
+      preference.removeEventListener('change', syncPointerPreference);
+      if (pointerListening) removeEventListener('pointermove', onPointerMove);
       if (raf) cancelAnimationFrame(raf);
     };
   }, []);

@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import Dialog, { Close } from './Dialog';
 import Art from './Art';
+import Icon from './Icon';
 import { artists, events, genres, tracks } from '../data';
 import { useUI } from '../hooks/useUI';
 import { usePlayer } from '../hooks/usePlayer';
@@ -75,7 +76,7 @@ function LocalResult({ index, onPlay, onQueue, isPlaying }: { index: number; onP
   return <li className={`grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-3 border-b border-bone/10 py-3 ${isPlaying ? 'rounded-xl bg-cyan/[.07] px-2' : ''}`}>
     <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-raised">
       <Art a={track.a} b={track.b} image={track.image} className="h-full w-full object-cover" />
-      {isPlaying && <div className="absolute inset-0 grid place-items-center bg-black/45"><span className="font-mono text-xs text-cyan">▶</span></div>}
+      {isPlaying && <div className="absolute inset-0 grid place-items-center bg-black/45 text-cyan"><Icon n="play" s={18} /></div>}
     </div>
     <div className="min-w-0"><div className="flex flex-wrap items-baseline justify-between gap-2"><p className="break-words font-semibold">{track.title}</p><span className="text-[10px] font-mono text-bone/50">{duration(track.dur)}</span></div><p className="mt-1 text-sm text-bone/65">{track.artist} · {track.genre} · {track.bpm} BPM</p>
       <div className="mt-2 flex flex-wrap gap-2">
@@ -94,7 +95,7 @@ function AppleResult({ track, matchingVideo, matchingSpotify, onPlay, onPreview,
   return <li className={`grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-3 border-b border-bone/10 py-3 ${isPlaying ? 'rounded-xl bg-cyan/[.07] px-2' : ''}`}>
     <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-raised">
       {track.image ? <img src={track.image} alt="" loading="lazy" className="h-full w-full object-cover" /> : <span className="h-full w-full bg-raised" />}
-      {isPlaying && <div className="absolute inset-0 grid place-items-center bg-black/45"><span className="font-mono text-xs text-cyan">▶</span></div>}
+      {isPlaying && <div className="absolute inset-0 grid place-items-center bg-black/45 text-cyan"><Icon n="play" s={18} /></div>}
     </div>
     <div className="min-w-0"><div className="flex flex-wrap items-baseline justify-between gap-2"><p className="break-words font-semibold">{track.title}</p>{duration(track.durationSeconds) && <span className="text-[10px] font-mono text-bone/50">{duration(track.durationSeconds)} full track</span>}</div><p className="mt-1 break-words text-sm text-bone/65">{track.artist}{track.album ? ` · ${track.album}` : ''}</p>
       <p className="mt-1 flex flex-wrap gap-x-2 text-[10px] text-bone/50"><span>{track.catalogSource === 'iTunes Store' ? 'iTunes Store · preview catalog' : 'Apple Music · catalog'}</span>{track.genre && <span>{track.genre}</span>}{track.releaseDate && <span>{track.releaseDate.slice(0, 10)}</span>}{track.explicit && <span>Explicit</span>}</p>
@@ -106,19 +107,16 @@ function AppleResult({ track, matchingVideo, matchingSpotify, onPlay, onPreview,
 
 function YouTubeResultCard({ video, selected, playing, onSelect, onQueue }: { video: YouTubeResult; selected: boolean; playing: boolean; onSelect: () => void; onQueue: () => void }) {
   const playbackAllowed = video.embeddingStatus !== 'blocked';
-  return <li data-youtube-video-id={video.id} className={`min-w-0 border-b border-bone/10 py-3 ${selected ? 'rounded-xl bg-cyan/[.06] px-2' : ''}`}>
-    <button type="button" onClick={onSelect} aria-pressed={selected} className="grid w-full min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-cyan sm:grid-cols-[8rem_minmax(0,1fr)]">
+  return <li data-youtube-video-id={video.id} className={`min-w-0 border-b border-bone/10 py-2 ${selected ? 'rounded-xl bg-cyan/[.06] px-2' : ''}`}>
+    <button type="button" onClick={onSelect} aria-pressed={selected} aria-label={`Play ${video.title} by ${video.artist}`} className="grid w-full min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-cyan sm:grid-cols-[7rem_minmax(0,1fr)]">
       {video.thumbnail ? <img src={video.thumbnail} alt="" loading="lazy" className="aspect-video w-full rounded-lg object-cover" /> : <span className="aspect-video rounded-lg bg-raised" />}
-      <span className="min-w-0"><span className="flex flex-wrap items-start justify-between gap-2"><span className="break-words font-semibold">{video.title}</span>{selected && <span className="shrink-0 rounded-full bg-cyan/15 px-2 py-1 text-[9px] font-mono text-cyan">{playing ? 'PLAYING' : 'SELECTED'}</span>}</span><span className="mt-1 block break-words text-sm text-bone/65">{video.artist}{duration(video.durationSeconds) ? ` - ${duration(video.durationSeconds)}` : ''}</span><span className="mt-1 block text-[10px] text-bone/50">YouTube video - {playbackAllowed ? 'official embedded playback' : 'embedding disabled by uploader'}</span></span>
+      <span className="min-w-0"><span className="flex flex-wrap items-start justify-between gap-2"><span className="line-clamp-2 break-words text-sm font-semibold leading-5">{video.title}</span>{selected && <span className="shrink-0 rounded-full bg-cyan/15 px-2 py-1 text-[9px] font-mono text-cyan">{playing ? 'PLAYING' : 'SELECTED'}</span>}</span><span className="mt-1 block truncate text-xs text-bone/60">{video.artist}{duration(video.durationSeconds) ? ` · ${duration(video.durationSeconds)}` : ''}</span></span>
     </button>
-    <div className="mt-2 flex flex-wrap gap-2 pl-[calc(5.5rem+0.75rem)] sm:pl-[calc(8rem+0.75rem)]">
-      <button type="button" onClick={onSelect} className="min-h-10 rounded-full bg-cyan px-4 text-xs font-bold text-ink hover:brightness-110">
-        Play video
-      </button>
-      <button type="button" onClick={onQueue} className="min-h-10 rounded-full border border-bone/15 px-3 text-xs text-bone/75 hover:border-cyan hover:text-cyan">
+    <div className="mt-1 flex flex-wrap gap-2 pl-[calc(5.5rem+0.75rem)] sm:pl-[calc(7rem+0.75rem)]">
+      <button type="button" onClick={onQueue} className="min-h-8 rounded-full border border-bone/15 px-3 text-[10px] text-bone/65 hover:border-cyan hover:text-cyan">
         + Queue
       </button>
-      <a href={video.watchUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center rounded-full border border-bone/15 px-3 text-xs hover:border-cyan hover:text-cyan">
+      <a href={video.watchUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="inline-flex min-h-8 items-center rounded-full px-2 text-[10px] text-bone/45 hover:text-cyan">
         Open on YouTube ↗
       </a>
       {selected && !playbackAllowed && <span className="inline-flex min-h-10 items-center text-xs text-amber-100/75">Open on YouTube to watch this video.</span>}
@@ -132,7 +130,7 @@ function SpotifyResult({ track, onMatching }: { track: SpotifyTrackResult; onMat
   </li>;
 }
 
-function Search({ q: initialQuery, embedded = false }: { q: string; embedded?: boolean }) {
+function Search({ q: initialQuery, embedded = false, resetSignal = 0, showDownloads = true, onSelection, onQueryChange }: { q: string; embedded?: boolean; resetSignal?: number; showDownloads?: boolean; onSelection?: () => void; onQueryChange?: (query: string) => void }) {
   const [query, setQuery] = useState(initialQuery);
   const [provider, setProvider] = useState<SearchProvider>('youtube');
   const [tab, setTab] = useState<'search' | 'downloads'>('search');
@@ -168,11 +166,14 @@ function Search({ q: initialQuery, embedded = false }: { q: string; embedded?: b
   const speechWindow = typeof window === 'undefined' ? null : window as SpeechWindow;
   const Recognition = speechWindow?.SpeechRecognition ?? speechWindow?.webkitSpeechRecognition;
   const normalized = query.trim().toLocaleLowerCase();
+  const updateQuery = (value: string) => { setQuery(value); onQueryChange?.(value); };
   const localMatch = (...fields: string[]) => fields.some((field) => field.toLocaleLowerCase().includes(normalized));
   const matchingTracks = useMemo(() => tracks.map((track, index) => ({ track, index })).filter(({ track }) => normalized.length > 0 && localMatch(track.title, track.artist, track.genre, String(track.bpm), track.date, `${Math.floor(track.dur / 60)}:${track.dur % 60}`, 'Ayatullah Al Khomeini')), [normalized]);
   const matchingArtists = useMemo(() => artists.filter((artist) => normalized.length > 0 && localMatch(artist.name, artist.genre, artist.bio, artist.id === 'aak-music' ? 'Ayatullah Al Khomeini' : '')), [normalized]);
   const matchingGenres = useMemo(() => genres.filter((genre) => normalized.length > 0 && localMatch(genre.name)), [normalized]);
   const matchingEvents = useMemo(() => events.filter((event) => normalized.length > 0 && localMatch(event.name, event.city, event.country, event.venue)), [normalized]);
+
+  useEffect(() => { setQuery(initialQuery); }, [initialQuery, resetSignal]);
 
   const rememberSearch = (value: string) => {
     const term = value.trim();
@@ -268,8 +269,8 @@ function Search({ q: initialQuery, embedded = false }: { q: string; embedded?: b
           transcript += `${event.results[index][0]?.transcript ?? ''} `;
           if (event.results[index].isFinal) finalTranscript += `${event.results[index][0]?.transcript ?? ''} `;
         }
-        if (transcript.trim()) setQuery(transcript.trim());
-        if (finalTranscript.trim()) { setQuery(finalTranscript.trim()); setVoiceAwaitingReview(true); setVoiceMessage('Review and edit the recognized phrase before searching.'); }
+         if (transcript.trim()) updateQuery(transcript.trim());
+         if (finalTranscript.trim()) { updateQuery(finalTranscript.trim()); setVoiceAwaitingReview(true); setVoiceMessage('Review and edit the recognized phrase before searching.'); }
       };
       instance.onerror = (event) => { setVoiceMessage(event.error === 'not-allowed' || event.error === 'service-not-allowed' ? 'Microphone permission was denied. Allow it in browser settings, or type your search.' : event.error === 'no-speech' ? 'No speech was recognized. Try again or type your search.' : `Voice search could not start (${event.error}).`); setListening(false); };
       instance.onend = () => setListening(false);
@@ -283,14 +284,14 @@ function Search({ q: initialQuery, embedded = false }: { q: string; embedded?: b
     youtubeSearchRequest.current = null;
     youtubePageRequest.current = null;
     youtubePageInFlight.current = false;
-    setQuery(''); setVoiceAwaitingReview(false); setErrors(EMPTY_ERRORS); setLoading(EMPTY_LOADING);
+    updateQuery(''); setVoiceAwaitingReview(false); setErrors(EMPTY_ERRORS); setLoading(EMPTY_LOADING);
     setYoutube([]); setYoutubeNextPageToken(null); setYoutubePageError(''); setYoutubePageLoading(false);
     setApple([]); setSpotify([]);
     youtubeInput.current?.focus();
   };
 
   const submitSearch = (event?: FormEvent) => { event?.preventDefault(); setTab('search'); setVoiceAwaitingReview(false); rememberSearch(query); };
-  const finishSelection = () => { if (!embedded) close(); };
+  const finishSelection = () => { if (!embedded) close(); onSelection?.(); };
   const playLocal = (index: number) => { universal.closeAudio(); universal.closeVideo(); localPlayer.play(index); finishSelection(); };
   const asAudioTrack = (result: (typeof apple)[number]): AudioCatalogTrack => ({
     id: result.id,
@@ -332,7 +333,7 @@ function Search({ q: initialQuery, embedded = false }: { q: string; embedded?: b
   const content = <div ref={box} className={`mx-auto min-w-0 ${embedded ? 'max-w-6xl' : 'max-w-4xl'} px-4 ${embedded ? 'py-5 sm:px-6 sm:py-6' : 'pb-28 pt-20 sm:px-8 sm:pt-24'}`}>
     <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
       <div><p className="mb-1 text-[10px] font-mono uppercase tracking-[.2em] text-cyan">AAK MUSIC · DISCOVER</p><h2 className="font-display text-xl font-bold sm:text-2xl">Universal music search</h2><p className="mt-1 text-xs text-bone/50">Search one catalog at a time. Results and playback support are labeled by source.</p></div>
-      <div className="flex gap-2" role="tablist" aria-label="Player panels"><button type="button" role="tab" aria-selected={tab === 'search'} onClick={() => setTab('search')} className={`min-h-10 rounded-full px-4 text-[10px] font-mono ${tab === 'search' ? 'bg-cyan font-bold text-ink' : 'border border-bone/15 text-bone/60 hover:border-cyan'}`}>SEARCH</button><button type="button" role="tab" aria-selected={tab === 'downloads'} onClick={() => setTab('downloads')} className={`min-h-10 rounded-full px-4 text-[10px] font-mono ${tab === 'downloads' ? 'bg-cyan font-bold text-ink' : 'border border-bone/15 text-bone/60 hover:border-cyan'}`}>DOWNLOADS</button></div>
+      {showDownloads && <div className="flex gap-2" role="tablist" aria-label="Player panels"><button type="button" role="tab" aria-selected={tab === 'search'} onClick={() => setTab('search')} className={`min-h-10 rounded-full px-4 text-[10px] font-mono ${tab === 'search' ? 'bg-cyan font-bold text-ink' : 'border border-bone/15 text-bone/60 hover:border-cyan'}`}>SEARCH</button><button type="button" role="tab" aria-selected={tab === 'downloads'} onClick={() => setTab('downloads')} className={`min-h-10 rounded-full px-4 text-[10px] font-mono ${tab === 'downloads' ? 'bg-cyan font-bold text-ink' : 'border border-bone/15 text-bone/60 hover:border-cyan'}`}>DOWNLOADS</button></div>}
     </div>
     {tab === 'downloads' ? <DownloadPanel /> : <>
       <div role="tablist" aria-label="Search provider" className="mb-3 flex min-w-0 flex-wrap gap-2">
@@ -346,25 +347,25 @@ function Search({ q: initialQuery, embedded = false }: { q: string; embedded?: b
       <form onSubmit={submitSearch}>
         <label htmlFor={embedded ? 'player-universal-search' : 'universal-music-search'} className="sr-only">Search {provider === 'youtube' ? 'YouTube videos' : provider === 'apple' ? 'Apple Music' : provider === 'spotify' ? 'Spotify' : 'the AAK Music library'}</label>
         <div className="group flex min-h-14 min-w-0 items-center gap-1 rounded-2xl border border-bone/15 bg-raised/50 px-2 shadow-sm transition-colors focus-within:border-bone/40 focus-within:shadow-[0_0_0_3px_rgb(var(--fg)/.07)] sm:min-h-16 sm:gap-3 sm:px-4">
-          <svg aria-hidden="true" className="h-5 w-5 shrink-0 text-bone/45" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
-          <input ref={youtubeInput} id={embedded ? 'player-universal-search' : 'universal-music-search'} data-autofocus={!embedded || undefined} list={embedded ? 'player-search-suggestions' : 'aak-search-suggestions'} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && voiceAwaitingReview) { event.preventDefault(); submitSearch(); } else if (event.key === 'ArrowDown') { event.preventDefault(); box.current?.querySelector<HTMLElement>('ul button, ul a')?.focus(); } }} placeholder={provider === 'youtube' ? 'Search YouTube songs, artists, or videos…' : provider === 'apple' ? 'Search Apple Music songs or artists…' : provider === 'spotify' ? 'Search Spotify songs or artists…' : 'Search your AAK releases…'} autoComplete="off" className="min-h-10 min-w-0 flex-1 appearance-none border-0 bg-transparent py-3 font-display text-base font-semibold text-bone outline-none ring-0 placeholder:text-bone/40 focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 sm:min-h-11 sm:text-lg" />
-                    {query.length > 0 && <button type="button" onClick={clearSearch} aria-label="Clear search" title="Clear search" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-bone/10 text-bone/55 transition hover:border-bone/30 hover:text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:h-11 sm:w-11"><svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" viewBox="0 0 24 24"><path d="m18 6-12 12M6 6l12 12" /></svg></button>}<datalist id={embedded ? 'player-search-suggestions' : 'aak-search-suggestions'}>{[...history, ...tracks.map((track) => track.title), ...artists.map((artist) => artist.name), ...genres.map((genre) => genre.name)].map((term, index) => <option key={`${term}-${index}`} value={term} />)}</datalist>
+          <span className="shrink-0 text-bone/45"><Icon n="search" s={19} /></span>
+          <input ref={youtubeInput} id={embedded ? 'player-universal-search' : 'universal-music-search'} data-autofocus={!embedded || undefined} list={embedded ? 'player-search-suggestions' : 'aak-search-suggestions'} value={query} onChange={(event) => updateQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && voiceAwaitingReview) { event.preventDefault(); submitSearch(); } else if (event.key === 'ArrowDown') { event.preventDefault(); box.current?.querySelector<HTMLElement>('ul button, ul a')?.focus(); } }} placeholder={provider === 'youtube' ? 'Search YouTube songs, artists, or videos…' : provider === 'apple' ? 'Search Apple Music songs or artists…' : provider === 'spotify' ? 'Search Spotify songs or artists…' : 'Search your AAK releases…'} autoComplete="off" className="min-h-10 min-w-0 flex-1 appearance-none border-0 bg-transparent py-3 font-display text-base font-semibold text-bone outline-none ring-0 placeholder:text-bone/40 focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 sm:min-h-11 sm:text-lg" />
+                    {query.length > 0 && <button type="button" onClick={clearSearch} aria-label="Clear search" title="Clear search" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-bone/10 text-bone/55 transition hover:border-bone/30 hover:text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan sm:h-11 sm:w-11"><Icon n="clear" s={16} /></button>}<datalist id={embedded ? 'player-search-suggestions' : 'aak-search-suggestions'}>{[...history, ...tracks.map((track) => track.title), ...artists.map((artist) => artist.name), ...genres.map((genre) => genre.name)].map((term, index) => <option key={`${term}-${index}`} value={term} />)}</datalist>
           <button type="button" onClick={toggleVoiceInput} disabled={!Recognition} aria-label={listening ? 'Stop voice input' : Recognition ? 'Start voice input' : 'Voice input unavailable'} aria-pressed={listening} title={Recognition ? (listening ? 'Stop listening' : 'Search by voice') : 'Voice input is not supported'} className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone/50 disabled:cursor-not-allowed disabled:opacity-45 sm:h-11 sm:w-11 ${listening ? 'border-cyan/50 bg-cyan/10 text-cyan' : 'border-bone/10 text-bone/60 hover:border-bone/30 hover:text-bone'}`}>
-            <svg aria-hidden="true" width="19" height="19" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3m-4 0h8" /></svg>
+            <Icon n="mic" s={19} />
           </button>
-          <button type="submit" aria-label={`Search ${resultHeading}`} title="Search" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan text-ink transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone/60 sm:h-11 sm:w-auto sm:px-5"><svg aria-hidden="true" className="h-4 w-4 sm:hidden" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8" /><path d="m16 16 5 5" /></svg><span className="hidden text-xs font-bold sm:inline">Search</span></button>
+          <button type="submit" aria-label={`Search ${resultHeading}`} title="Search" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan text-ink transition hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone/60 sm:h-11 sm:w-auto sm:px-5"><span className="sm:hidden"><Icon n="search" s={16} /></span><span className="hidden text-xs font-bold sm:inline">Search</span></button>
         </div>
       </form>
-      <div className="mt-2 flex min-h-5 flex-wrap items-center justify-between gap-2 text-[10px] text-bone/45"><p>{normalized.length >= 2 ? `${resultCount} ${provider === 'library' ? 'AAK tracks' : provider === 'youtube' ? 'YouTube results loaded' : `${resultHeading.toLocaleLowerCase()} shown`}${selectedLoading ? ' · searching…' : ''}` : provider === 'library' ? 'Search titles, artist, genre, and available AAK track metadata.' : `Search only the ${resultHeading} catalog. Provider results are never substituted.`}</p>{provider !== 'library' && <span>{resultHeading} · {selectedStatus}</span>}</div>
+      {normalized.length < 2 && <div className="mt-2 flex min-h-5 flex-wrap items-center justify-between gap-2 text-[10px] text-bone/45"><p>{provider === 'library' ? 'Search titles, artist, genre, and available AAK track metadata.' : `Search only the ${resultHeading} catalog. Provider results are never substituted.`}</p>{provider !== 'library' && <span>{resultHeading} · {selectedStatus}</span>}</div>}
       {provider === 'apple' && !appleMusicKitConfigured && statuses.apple === 'ready' && <p role="status" className="mt-1 text-[10px] leading-5 text-bone/45">{appleMusicCatalogConfigured ? 'Apple catalog results use the official API. Full playback additionally needs an allowed MusicKit origin and user authorization.' : 'These results come from Apple’s iTunes preview catalog. Full Apple Music playback requires a developer token, an allowed site origin, and user authorization.'}</p>}
       {(voiceMessage || !Recognition) && <p role="status" className="mt-2 text-xs leading-5 text-bone/55">{listening ? 'Listening… ' : ''}{voiceMessage || 'Voice search is unavailable in this browser. Keyboard search remains enabled.'}</p>}
       {voiceAwaitingReview && <button type="button" onClick={() => submitSearch()} className="mt-2 min-h-10 rounded-full bg-cyan px-4 text-xs font-mono font-bold text-ink">Search spoken phrase</button>}
       {normalized.length < 2 && <>
-        {!!history.length && <><H>Recent searches</H><div className="flex flex-wrap gap-2">{history.map((term) => <button key={term} type="button" onClick={() => setQuery(term)} className="min-h-9 rounded-full border border-bone/10 px-3 text-xs text-bone/60 hover:border-cyan hover:text-cyan">{term}</button>)}</div></>}
+        {!!history.length && <><H>Recent searches</H><div className="flex flex-wrap gap-2">{history.map((term) => <button key={term} type="button" onClick={() => updateQuery(term)} className="min-h-9 rounded-full border border-bone/10 px-3 text-xs text-bone/60 hover:border-cyan hover:text-cyan">{term}</button>)}</div></>}
         {provider === 'library' ? <div className="mt-3 flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-bone/50">All seven AAK releases are indexed for title, artist, genre, and metadata search.</p><button type="button" aria-expanded={browseLocal} onClick={() => setBrowseLocal((value) => !value)} className="min-h-9 rounded-full border border-bone/12 px-3 text-[10px] font-mono text-bone/60 hover:border-cyan hover:text-cyan">{browseLocal ? 'HIDE AAK LIBRARY' : 'BROWSE AAK LIBRARY'}</button></div> : <p className="mt-3 text-xs text-bone/50">Enter at least two characters to search {resultHeading}.</p>}
         {provider === 'library' && browseLocal && <ul className="m-0 mt-2 list-none p-0">{tracks.map((track, index) => <LocalResult key={track.id} index={index} onPlay={playLocal} onQueue={() => universal.addToUserQueue(track)} isPlaying={universal.currentItem.id === track.id && (universal.playing || localPlayer.playing)} />)}</ul>}
       </>}
-      {normalized.length >= 2 && provider === 'library' && <section className="min-w-0"><H>AAK Music library · {matchingTracks.length}</H>{matchingTracks.length ? <ul className="m-0 list-none p-0">{matchingTracks.map(({ track, index }) => <LocalResult key={track.id} index={index} onPlay={playLocal} onQueue={() => universal.addToUserQueue(track)} isPlaying={universal.currentItem.id === track.id && (universal.playing || localPlayer.playing)} />)}</ul> : <p className="text-xs text-bone/45">No AAK library matches. Check the title, artist, genre, or track metadata.</p>}
+      {normalized.length >= 2 && provider === 'library' && <section aria-label="AAK Music library search results" tabIndex={0} className="max-h-[min(54svh,36rem)] min-w-0 overflow-y-auto overscroll-contain rounded-2xl border border-bone/12 bg-void/45 px-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-cyan"><div className="sticky top-0 z-10 -mx-3 border-b border-bone/10 bg-raised px-3 py-2"><H>AAK Music library · {matchingTracks.length}</H></div>{matchingTracks.length ? <ul className="m-0 list-none p-0">{matchingTracks.map(({ track, index }) => <LocalResult key={track.id} index={index} onPlay={playLocal} onQueue={() => universal.addToUserQueue(track)} isPlaying={universal.currentItem.id === track.id && (universal.playing || localPlayer.playing)} />)}</ul> : <p className="py-3 text-xs text-bone/45">No AAK library matches. Check the title, artist, genre, or track metadata.</p>}
         {!!(matchingArtists.length || matchingGenres.length || matchingEvents.length) && <div className="mt-4 flex flex-wrap gap-2">{matchingArtists.map((artist) => <button type="button" key={artist.id} onClick={() => { openArtist(artist.id); finishSelection(); }} className="min-h-9 rounded-full border border-bone/10 px-3 text-xs text-bone/60">Artist · {artist.name}</button>)}{matchingGenres.map((genre) => <button type="button" key={genre.id} onClick={() => { finishSelection(); document.getElementById('releases')?.scrollIntoView({ behavior: 'smooth' }); }} className="min-h-9 rounded-full border border-bone/10 px-3 text-xs text-bone/60">Genre · {genre.name}</button>)}{matchingEvents.map((event) => <button type="button" key={event.id} onClick={() => { openEvent(event.id); finishSelection(); }} className="min-h-9 rounded-full border border-bone/10 px-3 text-xs text-bone/60">Event · {event.name}</button>)}</div>}
       </section>}
       {normalized.length >= 2 && provider !== 'library' && <section aria-label={`${resultHeading} search results`} className="mt-3 min-w-0 overflow-hidden rounded-2xl border border-bone/12 bg-void/55">
@@ -393,7 +394,6 @@ function Search({ q: initialQuery, embedded = false }: { q: string; embedded?: b
       </section>}
       {provider === 'spotify' && normalized.length >= 2 && <p className="mt-4 text-[10px] leading-5 text-bone/40">Spotify catalog entries are metadata with an official link unless a separately authorized playback session is available. No preview is presented as a full song.</p>}
       {provider === 'apple' && normalized.length >= 2 && <p className="mt-4 text-[10px] leading-5 text-bone/40">Apple preview audio plays only when a preview URL is supplied. Subscriber playback requires MusicKit authorization and an eligible account.</p>}
-      {provider === 'youtube' && normalized.length >= 2 && <p className="mt-4 text-[10px] leading-5 text-bone/40">YouTube playback uses the official visible IFrame player; this site does not provide audio-only playback. Results are relevance-ranked and available page by page from YouTube.</p>}
     </>}
   </div>;
 

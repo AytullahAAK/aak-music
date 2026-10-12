@@ -56,6 +56,7 @@ export interface UniversalPlayerContextValue {
   setVideoController: (controller: YouTubeTransportController | null) => void;
   syncVideo: (state: number, currentTime: number, duration: number) => void;
   toggleVideo: () => void;
+  pauseForLoopStudio: () => Promise<void>;
   seekVideo: (seconds: number) => void;
   setVideoVolume: (volume: number) => void;
   playAudio: (track: AudioCatalogTrack, sequence?: AudioCatalogTrack[], preserveQueueContext?: boolean) => void;
@@ -102,6 +103,8 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   const suppressMusicKitEndRef = useRef(false);
   const musicKitEndedHandlerRef = useRef<() => void>(() => {});
   const videoControllerRef = useRef<YouTubeTransportController | null>(null);
+  const videoPauseWaitRef = useRef<(() => void) | null>(null);
+  const loopHandoffRequestedRef = useRef(false);
   const [activeAudio, setActiveAudio] = useState<AudioCatalogTrack | null>(null);
   const [activeVideo, setActiveVideo] = useState<YouTubeResult | null>(null);
   const [videoQueue, setVideoQueueState] = useState<YouTubeResult[]>([]);
@@ -278,6 +281,9 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
 
   const selectVideo = useCallback((video: YouTubeResult, sequence: YouTubeResult[] = [video], preserveQueueContext = false) => {
     pauseCurrent();
+    // Replace the existing YouTube selection in-place; never let two videos
+    // overlap while the persistent iframe switches to its next video ID.
+    videoControllerRef.current?.pauseVideo();
     claimPlayback('youtube-iframe');
     musicKitRef.current?.player.stop();
     if (player.playing) player.toggle();
@@ -363,7 +369,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     playVideo(videoQueue[index], videoQueue);
   }, [playVideo, repeat, videoQueue, videoQueueIndex, videoTime]);
 
-  const closeVideo = useCallback(() => { videoControllerRef.current?.pauseVideo(); setActiveVideo(null); setVideoQueueState([]); setVideoQueueIndex(-1); setVideoPlaying(false); setVideoReady(false); setVideoMode(false); setVideoTime(0); setVideoDuration(0); videoControllerRef.current = null; setPlaybackOwner('none'); }, []);
+  const closeVideo = useCallback(() => { videoControllerRef.current?.pauseVideo(); loopHandoffRequestedRef.current = false; videoPauseWaitRef.current?.(); videoPauseWaitRef.current = null; setActiveVideo(null); setVideoQueueState([]); setVideoQueueIndex(-1); setVideoPlaying(false); setVideoReady(false); setVideoMode(false); setVideoTime(0); setVideoDuration(0); videoControllerRef.current = null; setPlaybackOwner('none'); }, []);
 
   const setVideoController = useCallback((controller: YouTubeTransportController | null) => { videoControllerRef.current = controller; setVideoReady(Boolean(controller)); }, []);
   const handleVideoEndedRef = useRef<() => void>(() => {});
@@ -379,11 +385,51 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     setVideoPlaying(state === 1);
     setVideoTime(Number.isFinite(currentTime) ? Math.max(0, currentTime) : 0);
     setVideoDuration(Number.isFinite(total) ? Math.max(0, total) : 0);
+    if (state === 0 && loopHandoffRequestedRef.current) {
+      loopHandoffRequestedRef.current = false;
+      videoPauseWaitRef.current?.();
+      videoPauseWaitRef.current = null;
+      return;
+    }
+    if (state === 2 || state === -1) {
+      loopHandoffRequestedRef.current = false;
+      videoPauseWaitRef.current?.();
+      videoPauseWaitRef.current = null;
+    }
     if (state === 0) handleVideoEndedRef.current();
   }, []);
+  const pauseForLoopStudio = useCallback(() => {
+    const controller = videoControllerRef.current;
+    if (!activeVideo || !videoPlaying || !controller) return Promise.resolve();
+    loopHandoffRequestedRef.current = true;
+    return new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        loopHandoffRequestedRef.current = false;
+        videoPauseWaitRef.current = null;
+        reject(new Error('YouTube did not confirm that playback paused. Pause it in the official player and try starting the loop again.'));
+      }, 1800);
+      videoPauseWaitRef.current = () => {
+        window.clearTimeout(timeout);
+        resolve();
+      };
+      try { controller.pauseVideo(); }
+      catch (error) {
+        window.clearTimeout(timeout);
+        loopHandoffRequestedRef.current = false;
+        videoPauseWaitRef.current = null;
+        reject(error);
+      }
+    });
+  }, [activeVideo, videoPlaying]);
   const toggleVideo = useCallback(() => {
     if (!videoMode) return;
-    if (videoPlaying) videoControllerRef.current?.pauseVideo(); else videoControllerRef.current?.playVideo();
+    if (videoPlaying) videoControllerRef.current?.pauseVideo();
+    else {
+      // Resuming from Loop Studio is an explicit ownership handoff. The same
+      // iframe stays mounted and is resumed rather than creating another one.
+      claimPlayback('youtube-iframe');
+      videoControllerRef.current?.playVideo();
+    }
   }, [videoMode, videoPlaying]);
   const seekVideo = useCallback((seconds: number) => videoControllerRef.current?.seekTo(Math.max(0, Math.min(videoDuration || seconds, seconds))), [videoDuration]);
   const setVideoVolume = useCallback((next: number) => {
@@ -609,20 +655,29 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   }, [activeVideo, activeAudio, videoTime, time, player, playing, prevVideo, queueIndex, repeat, queue.length, playQueued, playAppleMusic, beginAudio]);
 
   const toggle = useCallback(() => {
-    if (activeVideo) { if (!videoMode) return; if (videoPlaying) videoControllerRef.current?.pauseVideo(); else videoControllerRef.current?.playVideo(); return; }
+    if (activeVideo) {
+      if (!videoMode) return;
+      if (videoPlaying) videoControllerRef.current?.pauseVideo();
+      else { claimPlayback('youtube-iframe'); videoControllerRef.current?.playVideo(); }
+      return;
+    }
     if (activeAudio?.playbackKind === 'subscription') {
       const kit = musicKitRef.current;
       if (!kit) return;
-      if (kit.player.isPlaying) kit.player.pause(); else void kit.player.play().catch(() => setError('Apple Music could not resume. Check the subscription and try again.'));
+      if (kit.player.isPlaying) kit.player.pause(); else {
+        claimPlayback('apple-musickit');
+        void kit.player.play().catch(() => setError('Apple Music could not resume. Check the subscription and try again.'));
+      }
       return;
     }
     const audio = player.getAudioElement();
     if (!audio || !activeAudio) return;
     if (audio.paused) {
+      claimPlayback('catalogue-audio');
       attachAnalyser(audio);
       void audio.play().catch(() => setError('The audio could not resume. Try again or open the provider link.'));
     } else audio.pause();
-  }, [activeAudio, activeVideo, player.getAudioElement, videoMode, videoPlaying]);
+  }, [activeAudio, activeVideo, player.getAudioElement, videoMode, videoPlaying, attachAnalyser]);
 
   const seek = useCallback((seconds: number) => {
     if (activeAudio?.playbackKind === 'subscription') {
@@ -713,7 +768,32 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const stopExternalForAnotherSource = (event: Event) => {
       const owner = (event as CustomEvent<PlaybackOwner>).detail;
-      if (owner === 'catalogue-audio' && !activeAudio && !activeVideo) return;
+      if (owner === 'loop-studio') {
+        // Loop Studio takes exclusive sound ownership, but the selected song
+        // and its provider instance stay alive so the user can resume later.
+        if (activeVideo) {
+          videoControllerRef.current?.pauseVideo();
+          setVideoPlaying(false);
+        }
+        if (activeAudio) {
+          if (activeAudio.playbackKind === 'subscription') {
+            suppressMusicKitEndRef.current = true;
+            musicKitRef.current?.player.pause();
+          }
+          player.getAudioElement()?.pause();
+          setAudioActivity(`catalogue:${activeAudio.provider}:${activeAudio.id}`, false);
+          setPlaying(false);
+        }
+        return;
+      }
+
+      // Reclaiming a paused item of the same provider must not clear the item
+      // being resumed. New items of the same provider replace the existing
+      // media object/source in their normal selection path.
+      if (owner === 'youtube-iframe' && activeVideo) return;
+      if (owner === 'catalogue-audio' && activeAudio?.playbackKind !== 'subscription') return;
+      if (owner === 'apple-musickit' && activeAudio?.playbackKind === 'subscription') return;
+      if (!activeAudio && !activeVideo) return;
       if (activeAudio || activeVideo) {
         if (activeAudio) closeAudio();
         if (activeVideo) closeVideo();
@@ -721,7 +801,7 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener('aak-playback-request', stopExternalForAnotherSource);
     return () => window.removeEventListener('aak-playback-request', stopExternalForAnotherSource);
-  }, [activeAudio, activeVideo, closeAudio, closeVideo]);
+  }, [activeAudio, activeVideo, closeAudio, closeVideo, player.getAudioElement]);
 
   useEffect(() => {
     if (activeAudio?.playbackKind !== 'subscription' || !playing) return;
@@ -741,14 +821,14 @@ export function UniversalPlayerProvider({ children }: { children: ReactNode }) {
     userQueue, currentItem, isQueueOpen, setIsQueueOpen, toggleQueue,
     addToUserQueue, removeFromUserQueue, moveUserQueueItem, clearUserQueue, playItem,
     playing, volume, repeat, shuffle, error,
-    videoPlaying, videoReady, videoMode, setVideoController, syncVideo, toggleVideo, seekVideo, setVideoVolume,
+    videoPlaying, videoReady, videoMode, setVideoController, syncVideo, toggleVideo, pauseForLoopStudio, seekVideo, setVideoVolume,
     playAudio, playAppleMusic, selectVideo, playVideo, setVideoQueue, nextVideo, prevVideo, enterVideoMode, exitVideoMode, addToQueue, clearQueue, playQueued, closeVideo, closeAudio, toggle, next, prev, seek, setVolume,
     setRepeat: setRepeatMode, setShuffle: setShuffleMode, setError, syncAudio, onEnded,
   }), [activeAudio, activeVideo, queue, queueIndex, videoQueue, videoQueueIndex,
     userQueue, currentItem, isQueueOpen, toggleQueue,
     addToUserQueue, removeFromUserQueue, moveUserQueueItem, clearUserQueue, playItem,
     playing, volume, repeat, shuffle, error, videoPlaying, videoReady, videoMode,
-    setVideoController, syncVideo, toggleVideo, seekVideo, setVideoVolume, playAudio, playAppleMusic, selectVideo, playVideo, setVideoQueue, nextVideo, prevVideo, enterVideoMode, exitVideoMode, addToQueue, clearQueue, playQueued, closeVideo, closeAudio, toggle, next, prev, seek, setVolume, setRepeatMode, setShuffleMode, syncAudio, onEnded]);
+    setVideoController, syncVideo, toggleVideo, pauseForLoopStudio, seekVideo, setVideoVolume, playAudio, playAppleMusic, selectVideo, playVideo, setVideoQueue, nextVideo, prevVideo, enterVideoMode, exitVideoMode, addToQueue, clearQueue, playQueued, closeVideo, closeAudio, toggle, next, prev, seek, setVolume, setRepeatMode, setShuffleMode, syncAudio, onEnded]);
 
   const clock = useMemo(() => ({ time, duration, videoTime, videoDuration }), [time, duration, videoTime, videoDuration]);
   return (

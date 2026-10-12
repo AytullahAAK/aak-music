@@ -53,7 +53,7 @@ function TimelineScrubber({
   );
 }
 
-function UnifiedPlayerExperience() {
+function UnifiedPlayerExperience({ onReturnToDiscovery }: { onReturnToDiscovery?: () => void } = {}) {
   const local = usePlayer();
   const universal = useUniversalPlayer();
   const universalTime = useUniversalPlayerTime();
@@ -184,11 +184,30 @@ function UnifiedPlayerExperience() {
         </div>
       )}
 
-      {/* HERO COMMAND STAGE */}
-      <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[400px_minmax(0,1fr)] xl:grid-cols-[440px_minmax(0,1fr)] xl:gap-12">
+      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,.9fr)] xl:gap-7">
+      <section className="min-w-0">
+      <div className="mb-5 flex min-w-0 items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[.2em] text-cyan">AAK MUSIC · PLAYER</p>
+          <p className="mt-1 text-xs text-bone/55">Source · {currentItem.provider}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onReturnToDiscovery ? onReturnToDiscovery() : local.setIsExpanded(false)}
+          aria-label={onReturnToDiscovery ? 'Return to music discovery' : 'Minimize player'}
+          title={onReturnToDiscovery ? 'Return to music discovery' : 'Minimize player'}
+          className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full border border-bone/15 bg-raised/60 px-3 text-xs font-semibold text-bone/75 transition hover:border-cyan/50 hover:text-cyan focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan sm:px-4"
+        >
+          <Icon n="minimize" s={15} />
+          <span className="hidden sm:inline">{onReturnToDiscovery ? 'Discover more' : 'Minimize'}</span>
+        </button>
+      </div>
+
+      {/* Watch-page stage: media, identity, and transport stay together. */}
+      <div className="grid grid-cols-1 items-start gap-5">
         {/* LEFT COLUMN: ARTWORK & IDENTITY */}
         <div className="min-w-0">
-          <div className="relative mx-auto aspect-square w-full max-w-[440px] overflow-hidden rounded-3xl border border-bone/15 bg-raised/30 shadow-[0_25px_60px_rgba(0,0,0,0.7)]">
+          <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-2xl border border-bone/15 bg-raised/30 shadow-[0_20px_55px_rgba(0,0,0,0.32)] sm:rounded-3xl">
             {/* Ambient Backlight Glow */}
             <div
               className="absolute -inset-4 opacity-40 blur-2xl transition-opacity"
@@ -204,12 +223,13 @@ function UnifiedPlayerExperience() {
               <div
                 data-aak-youtube-player-slot
                 aria-label={`Official YouTube player: ${video?.title}`}
-                className="relative z-10 aspect-video h-full w-full bg-black"
+                className="relative z-10 h-full w-full bg-black"
               />
             ) : (
               <>
+                {image && <img src={image} alt="" aria-hidden="true" className="absolute inset-0 h-full w-full scale-110 object-cover opacity-25 blur-2xl" />}
                 {image ? (
-                  <img src={image} alt="" className="relative z-10 h-full w-full object-cover" />
+                  <img src={image} alt={`${title} artwork`} className="relative z-10 h-full w-full object-contain p-3 drop-shadow-2xl sm:p-5" />
                 ) : (
                   <Art a={local.track.a} b={local.track.b} className="relative z-10 h-full w-full object-cover" />
                 )}
@@ -265,7 +285,7 @@ function UnifiedPlayerExperience() {
 
           {/* Track Typography & Details directly below Artwork */}
           <div className="mt-5 space-y-2">
-            <h1 className="break-words font-display text-2xl font-extrabold text-bone sm:text-3xl lg:text-4xl">
+            <h1 className="break-words font-display text-2xl font-extrabold leading-tight text-bone sm:text-3xl lg:text-4xl">
               {title}
             </h1>
             <p className="text-base font-medium text-bone/75 sm:text-lg">
@@ -295,10 +315,10 @@ function UnifiedPlayerExperience() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: TRANSPORT CONTROLS & AUDIO VISUALIZER */}
-        <div className="min-w-0 space-y-6">
+        {/* Transport and visualizer remain immediately below the media. */}
+        <div className="min-w-0 space-y-4">
           {/* AUDIO VISUALIZER CANVAS */}
-          <div className="relative overflow-hidden rounded-3xl border border-bone/12 bg-raised/20 p-4 shadow-xl backdrop-blur-xl">
+          <div className="relative overflow-hidden rounded-2xl border border-bone/12 bg-raised/30 p-4 shadow-lg sm:rounded-3xl">
             <div className="flex items-center justify-between border-b border-bone/10 pb-3">
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-cyan">{analyserAvailable ? 'Live Spectrum' : 'Playback activity'}</span>
@@ -313,7 +333,7 @@ function UnifiedPlayerExperience() {
           </div>
 
           {/* MAIN PLAYBACK CONTROL CARD */}
-          <div className="rounded-3xl border border-bone/15 bg-ink/90 p-6 shadow-2xl backdrop-blur-2xl">
+          <div className="rounded-2xl border border-bone/15 bg-ink/95 p-4 shadow-xl sm:rounded-3xl sm:p-6">
             {/* Timeline Scrubber */}
             <TimelineScrubber
               current={currentSeconds}
@@ -467,17 +487,18 @@ function UnifiedPlayerExperience() {
           </div>
         </div>
       </div>
+      </section>
 
       {/* FEATURE TABS DECK (QUEUES, RELATED, SEARCH, LYRICS) */}
-      <div className="mt-12 rounded-3xl border border-bone/15 bg-ink/70 p-4 shadow-2xl backdrop-blur-2xl sm:p-6 md:p-8">
+      <aside className="mt-8 min-w-0 rounded-2xl border border-bone/15 bg-ink/95 p-4 shadow-xl sm:rounded-3xl sm:p-5 xl:sticky xl:top-24 xl:mt-0 xl:max-h-[calc(100svh-7rem)] xl:overflow-y-auto xl:overscroll-contain">
         {/* TAB NAVIGATION */}
-        <div className="flex flex-wrap gap-2 border-b border-bone/10 pb-4" role="tablist">
+        <div className="flex flex-wrap gap-1.5 border-b border-bone/10 pb-4" role="tablist" aria-label="Player details">
           <button
             type="button"
             role="tab"
             aria-selected={activeTab === 'queue'}
             onClick={() => setActiveTab('queue')}
-            className={`flex items-center gap-2 rounded-full px-5 py-2.5 font-mono text-xs font-bold uppercase tracking-wider transition ${
+            className={`flex items-center gap-1.5 rounded-full px-3 py-2.5 font-mono text-[10px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'queue'
                 ? 'bg-cyan text-ink shadow-md'
                 : 'border border-bone/15 text-bone/60 hover:border-cyan hover:text-bone'
@@ -494,7 +515,7 @@ function UnifiedPlayerExperience() {
             role="tab"
             aria-selected={activeTab === 'related'}
             onClick={() => setActiveTab('related')}
-            className={`flex items-center gap-2 rounded-full px-5 py-2.5 font-mono text-xs font-bold uppercase tracking-wider transition ${
+            className={`flex items-center gap-1.5 rounded-full px-3 py-2.5 font-mono text-[10px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'related'
                 ? 'bg-cyan text-ink shadow-md'
                 : 'border border-bone/15 text-bone/60 hover:border-cyan hover:text-bone'
@@ -514,7 +535,7 @@ function UnifiedPlayerExperience() {
             role="tab"
             aria-selected={activeTab === 'search'}
             onClick={() => setActiveTab('search')}
-            className={`rounded-full px-5 py-2.5 font-mono text-xs font-bold uppercase tracking-wider transition ${
+            className={`rounded-full px-3 py-2.5 font-mono text-[10px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'search'
                 ? 'bg-cyan text-ink shadow-md'
                 : 'border border-bone/15 text-bone/60 hover:border-cyan hover:text-bone'
@@ -528,7 +549,7 @@ function UnifiedPlayerExperience() {
             role="tab"
             aria-selected={activeTab === 'lyrics'}
             onClick={() => setActiveTab('lyrics')}
-            className={`rounded-full px-5 py-2.5 font-mono text-xs font-bold uppercase tracking-wider transition ${
+            className={`rounded-full px-3 py-2.5 font-mono text-[10px] font-bold uppercase tracking-wider transition sm:text-xs ${
               activeTab === 'lyrics'
                 ? 'bg-cyan text-ink shadow-md'
                 : 'border border-bone/15 text-bone/60 hover:border-cyan hover:text-bone'
@@ -539,7 +560,7 @@ function UnifiedPlayerExperience() {
         </div>
 
         {/* TAB PANELS */}
-        <div className="mt-6 min-h-[300px]">
+        <div className="mt-5 min-h-[300px]">
           {/* TAB 1: UP NEXT & QUEUE */}
           {activeTab === 'queue' && (
             <div className="space-y-6">
@@ -868,6 +889,7 @@ function UnifiedPlayerExperience() {
             </div>
           )}
         </div>
+      </aside>
       </div>
     </div>
   );

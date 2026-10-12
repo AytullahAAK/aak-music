@@ -1,3 +1,4 @@
 import {useEffect,useRef} from 'react';
+import {decorativeMotionAllowed,PERFORMANCE_MODE_EVENT} from '../utils/performanceMode';
 export function useReveal<T extends HTMLElement>(){const r=useRef<T>(null);
-useEffect(()=>{const el=r.current;if(!el)return;const o=new IntersectionObserver(([e])=>{if(e.isIntersecting){el.classList.add('in');o.disconnect()}},{threshold:.15});o.observe(el);return()=>o.disconnect()},[]);return r}
+useEffect(()=>{const el=r.current;if(!el)return;let observer:IntersectionObserver|null=null;const sync=()=>{observer?.disconnect();observer=null;if(!decorativeMotionAllowed()){el.classList.add('in');return}observer=new IntersectionObserver(([entry])=>{if(entry.isIntersecting){el.classList.add('in');observer?.disconnect();observer=null}},{threshold:.15});observer.observe(el)};const preference=matchMedia('(prefers-reduced-motion: reduce)');sync();window.addEventListener(PERFORMANCE_MODE_EVENT,sync);preference.addEventListener('change',sync);return()=>{observer?.disconnect();window.removeEventListener(PERFORMANCE_MODE_EVENT,sync);preference.removeEventListener('change',sync)}},[]);return r}

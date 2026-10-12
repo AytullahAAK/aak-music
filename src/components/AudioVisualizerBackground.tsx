@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { motion, reduced } from '../hooks/motion';
+import { motion } from '../hooks/motion';
 import { sampleAnalyser } from '../hooks/analyser';
 import { useVisualizer } from '../hooks/useVisualizer';
+import { decorativeMotionAllowed, PERFORMANCE_MODE_EVENT } from '../utils/performanceMode';
 
 const tok = (v: string) =>
   getComputedStyle(document.documentElement)
@@ -21,7 +22,6 @@ export default function AudioVisualizerBackground() {
   const playingRef = useRef(motion.playing);
 
   useEffect(() => {
-    if (reduced) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -33,6 +33,7 @@ export default function AudioVisualizerBackground() {
     let dpr = 1;
     let raf = 0;
     let isLoopRunning = false;
+    let lastFrame = 0;
     let inlinePlayerVisible = false;
 
     // Smoothed visualizer values
@@ -346,11 +347,24 @@ export default function AudioVisualizerBackground() {
 
     // --- MAIN RENDER LOOP ---
     const render = (time: number) => {
+      if (qualityRef.current === 'low' || !decorativeMotionAllowed()) {
+        ctx.clearRect(0, 0, W, H);
+        isLoopRunning = false;
+        raf = 0;
+        return;
+      }
       // If page is hidden, stop loop
       if (document.hidden) {
         isLoopRunning = false;
+        raf = 0;
         return;
       }
+      const frameInterval = qualityRef.current === 'high' ? 16 : 33;
+      if (time - lastFrame < frameInterval) {
+        raf = requestAnimationFrame(render);
+        return;
+      }
+      lastFrame = time;
 
       // Read audio data if playing
       const isPlaying = playingRef.current;
@@ -426,9 +440,10 @@ export default function AudioVisualizerBackground() {
     };
 
     const startLoop = () => {
-      if (isLoopRunning || inlinePlayerVisible) return;
+      if (qualityRef.current === 'low' || !decorativeMotionAllowed() || isLoopRunning || inlinePlayerVisible) return;
       isLoopRunning = true;
       lastTime = performance.now();
+      lastFrame = 0;
       readTheme();
       raf = requestAnimationFrame(render);
     };
@@ -471,12 +486,21 @@ export default function AudioVisualizerBackground() {
       if (inlinePlayerVisible) stopLoop();
       else if (motion.playing && !document.hidden) startLoopRef.current?.();
     };
+    const onPerformancePreference = () => {
+      if (qualityRef.current === 'low' || !decorativeMotionAllowed()) {
+        stopLoop();
+        ctx.clearRect(0, 0, W, H);
+      } else if (motion.playing && !document.hidden && !inlinePlayerVisible) startLoop();
+    };
+    const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
 
     window.addEventListener('resize', onResize);
     window.visualViewport?.addEventListener('resize', onResize);
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('aak-audio-activity', onAudioActivity);
     window.addEventListener('aak-inline-visualizer-state', onInlineVisualizer);
+    window.addEventListener(PERFORMANCE_MODE_EVENT, onPerformancePreference);
+    motionPreference.addEventListener('change', onPerformancePreference);
     const playerCanvas = document.querySelector('[data-aak-player-visualizer]');
     if (playerCanvas && 'IntersectionObserver' in window) {
       const observer = new IntersectionObserver(([entry]) => onInlineVisualizer(new CustomEvent('aak-inline-visualizer-state', { detail: Boolean(entry?.isIntersecting) })), { threshold: .12 });
@@ -490,6 +514,8 @@ export default function AudioVisualizerBackground() {
         document.removeEventListener('visibilitychange', onVisibility);
         window.removeEventListener('aak-audio-activity', onAudioActivity);
         window.removeEventListener('aak-inline-visualizer-state', onInlineVisualizer);
+        window.removeEventListener(PERFORMANCE_MODE_EVENT, onPerformancePreference);
+        motionPreference.removeEventListener('change', onPerformancePreference);
       };
     }
 
@@ -501,6 +527,8 @@ export default function AudioVisualizerBackground() {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('aak-audio-activity', onAudioActivity);
       window.removeEventListener('aak-inline-visualizer-state', onInlineVisualizer);
+      window.removeEventListener(PERFORMANCE_MODE_EVENT, onPerformancePreference);
+      motionPreference.removeEventListener('change', onPerformancePreference);
     };
   }, []);
 
@@ -530,7 +558,7 @@ export default function AudioVisualizerBackground() {
       />
 
       <div
-        className="pointer-events-none absolute inset-0"
+        className="aak-pointer-light pointer-events-none absolute inset-0"
         style={{
           background: 'radial-gradient(38rem ellipse at var(--pointer-x, 50vw) var(--pointer-y, 38vh), rgb(var(--accent2) / .035), transparent 74%)',
         }}

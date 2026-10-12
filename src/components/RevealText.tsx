@@ -1,5 +1,6 @@
 import {useEffect,useRef} from 'react';
+import {decorativeMotionAllowed,PERFORMANCE_MODE_EVENT} from '../utils/performanceMode';
 // Line-by-line mask reveal (slide + blur-to-sharp, 120ms stagger) when the heading enters the viewport.
 export default function RevealText({lines,as='h2',className=''}:{lines:string[];as?:'h1'|'h2'|'h3';className?:string}){const r=useRef<HTMLHeadingElement>(null),Tag=as as 'h2';
-useEffect(()=>{const el=r.current!,o=new IntersectionObserver(([e])=>{if(e.isIntersecting){el.classList.add('in');o.disconnect()}},{threshold:.3});o.observe(el);return()=>o.disconnect()},[]);
+useEffect(()=>{const el=r.current;if(!el)return;let observer:IntersectionObserver|null=null;const sync=()=>{observer?.disconnect();observer=null;if(!decorativeMotionAllowed()){el.classList.add('in');return}observer=new IntersectionObserver(([entry])=>{if(entry.isIntersecting){el.classList.add('in');observer?.disconnect();observer=null}},{threshold:.3});observer.observe(el)};const preference=matchMedia('(prefers-reduced-motion: reduce)');sync();window.addEventListener(PERFORMANCE_MODE_EVENT,sync);preference.addEventListener('change',sync);return()=>{observer?.disconnect();window.removeEventListener(PERFORMANCE_MODE_EVENT,sync);preference.removeEventListener('change',sync)}},[]);
 return <Tag ref={r} className={`rt ${className}`}>{lines.map((l,i)=><span key={l} className="block overflow-hidden pb-[.08em]"><span className="rt-in block" style={{transitionDelay:`${i*120}ms`}}>{l}</span></span>)}</Tag>}

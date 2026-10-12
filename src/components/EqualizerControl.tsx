@@ -1,4 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import Icon from './Icon';
 import { createPortal } from 'react-dom';
 import { applyEqualizerPreset, EQUALIZER_PRESETS, setEqualizerBand, useEqualizer } from '../hooks/useEqualizer';
 
@@ -7,7 +8,7 @@ const BANDS = [
   { hz: '350 Hz', title: 'Low mids' }, { hz: '1 kHz', title: 'Mids' },
   { hz: '3.5 kHz', title: 'Presence' }, { hz: '10 kHz', title: 'Air' },
 ];
-function EqualizerControl({ available = true }: { available?: boolean }) {
+function EqualizerControl({ available = true, compact = false }: { available?: boolean; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const { preset, values } = useEqualizer();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -62,7 +63,7 @@ function EqualizerControl({ available = true }: { available?: boolean }) {
     return () => { document.removeEventListener('pointerdown', outside); window.removeEventListener('keydown', keydown); };
   }, [open]);
   const panel = open && <div ref={panelRef} id="aak-equalizer-panel" role="dialog" aria-label="Audio equalizer" style={position ? { left: position.left, top: position.top, width: position.width, maxHeight: position.maxHeight } : { left: 8, top: 8, width: 'calc(100vw - 16px)', visibility: 'hidden' }} className="fixed z-[100] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-2xl border border-bone/20 bg-raised p-4 text-bone shadow-2xl backdrop-blur-xl">
-      <div className="flex items-start justify-between gap-3"><div><h3 className="text-xs font-mono uppercase tracking-wider text-cyan">6 band equalizer</h3><p className="mt-1 text-[10px] text-bone/50">Web Audio processing for AAK-owned audio and generated site audio where supported.</p></div><button type="button" aria-label="Close equalizer" onClick={() => setOpen(false)} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-lg text-bone/60 hover:bg-bone/10">×</button></div>
+      <div className="flex items-start justify-between gap-3"><div><h3 className="text-xs font-mono uppercase tracking-wider text-cyan">6 band equalizer</h3><p className="mt-1 text-[10px] text-bone/50">Web Audio processing for AAK-owned audio and generated site audio where supported.</p></div><button type="button" aria-label="Close equalizer" title="Close equalizer" onClick={() => setOpen(false)} className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-bone/60 transition-colors hover:bg-bone/10 hover:text-bone focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan"><Icon n="close" s={16} /></button></div>
       <div className="mt-3 flex flex-wrap gap-1.5">{Object.keys(EQUALIZER_PRESETS).map((name) => <button key={name} type="button" aria-pressed={preset === name} onClick={() => applyEqualizerPreset(name)} className={`min-h-9 rounded-full px-3 text-[10px] ${preset === name ? 'bg-cyan font-bold text-ink' : 'border border-bone/10 text-bone/60 hover:border-bone/30'}`}>{name}</button>)}<button type="button" onClick={() => applyEqualizerPreset('Flat')} className="min-h-9 rounded-full border border-bone/10 px-3 text-[10px] text-bone/55 hover:text-bone">Reset</button></div>
       <div className="mt-5 grid grid-cols-6 gap-2">{BANDS.map((band, index) => <label key={band.hz} className="flex min-w-0 flex-col items-center gap-2 text-center"><span className="text-[9px] font-mono text-bone/50">{band.hz}</span><input aria-label={`${band.title} equalizer band`} title={band.title} type="range" min={-9} max={9} step={1} value={values[index]} disabled={!available} onChange={(event) => setEqualizerBand(index, Number(event.target.value))} className="h-24 w-5 cursor-pointer accent-cyan [writing-mode:vertical-lr] [direction:rtl] disabled:opacity-35" /><span className="text-[9px] font-mono tabular-nums text-bone/55">{values[index] > 0 ? '+' : ''}{values[index]} dB</span></label>)}</div>
       {!available && <p role="status" className="mt-3 text-xs text-amber-100/75">The selected third party player does not expose audio to this equalizer.</p>}
@@ -71,7 +72,21 @@ function EqualizerControl({ available = true }: { available?: boolean }) {
 
   return <>
     <div ref={rootRef} className="relative">
-    <button ref={triggerRef} type="button" aria-expanded={open} aria-controls="aak-equalizer-panel" onClick={() => setOpen((state) => !state)} className="min-h-10 rounded-full border border-bone/15 px-3 text-[10px] font-mono text-bone/65 transition hover:border-cyan hover:text-cyan focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone/50">EQ <span className="text-cyan">{preset}</span></button>
+    <button
+      ref={triggerRef}
+      type="button"
+      aria-label={compact ? `Equalizer, current preset ${preset}` : 'Audio equalizer settings'}
+      title={compact ? `Equalizer · ${preset}` : 'Audio equalizer settings'}
+      aria-expanded={open}
+      aria-controls="aak-equalizer-panel"
+      onClick={() => setOpen((state) => !state)}
+      className={compact
+        ? 'grid h-10 w-10 place-items-center rounded-xl border border-bone/15 text-bone/65 transition hover:border-cyan hover:text-cyan focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone/50'
+        : 'inline-flex min-h-10 items-center gap-1.5 rounded-full border border-bone/15 px-3 text-[10px] font-mono text-bone/65 transition hover:border-cyan hover:text-cyan focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bone/50'}
+    >
+      <Icon n="sliders" s={15} />
+      {!compact && <>EQ <span className="text-cyan">{preset}</span></>}
+    </button>
     </div>
     {panel && createPortal(panel, document.body)}
   </>;

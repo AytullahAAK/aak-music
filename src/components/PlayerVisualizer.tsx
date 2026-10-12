@@ -1,7 +1,8 @@
 import { memo, useEffect, useRef } from 'react';
-import { motion, reduced } from '../hooks/motion';
+import { motion } from '../hooks/motion';
 import { sampleAnalyser } from '../hooks/analyser';
 import { useVisualizer } from '../hooks/useVisualizer';
+import { decorativeMotionAllowed, PERFORMANCE_MODE_EVENT } from '../utils/performanceMode';
 
 const EMPTY_BANDS = new Float32Array(32);
 const EMPTY_WAVEFORM = new Float32Array(128);
@@ -12,6 +13,7 @@ function PlayerVisualizer({ analyserAvailable = true }: { analyserAvailable?: bo
   const styleRef = useRef(style);
   const qualityRef = useRef(quality);
   const analyserAvailableRef = useRef(analyserAvailable);
+  const refreshRef = useRef<(() => void) | null>(null);
   styleRef.current = style;
   qualityRef.current = quality;
   analyserAvailableRef.current = analyserAvailable;
@@ -78,18 +80,23 @@ function PlayerVisualizer({ analyserAvailable = true }: { analyserAvailable?: bo
     const stop = () => { if (raf) cancelAnimationFrame(raf); raf = 0; };
     const frame = (time: number) => {
       if (!visible || document.hidden) { stop(); return; }
-      if (time - lastFrame >= (qualityRef.current === 'low' ? 50 : 33)) {
+      if (time - lastFrame >= (qualityRef.current === 'high' ? 16 : 33)) {
         lastFrame = time;
-        if (analyserAvailableRef.current && motion.playing && !reduced) sampleAnalyser();
+        if (analyserAvailableRef.current && motion.playing) sampleAnalyser();
         draw();
       }
-      if (analyserAvailableRef.current && motion.playing && !reduced) raf = requestAnimationFrame(frame);
+      if (analyserAvailableRef.current && motion.playing && qualityRef.current !== 'low' && decorativeMotionAllowed()) raf = requestAnimationFrame(frame);
       else { draw(); stop(); }
     };
     const start = () => {
       if (visible && analyserAvailableRef.current && motion.playing && !document.hidden) sampleAnalyser();
-      if (visible && analyserAvailableRef.current && motion.playing && !document.hidden && !reduced && !raf) raf = requestAnimationFrame(frame);
-      else draw();
+      if (visible && analyserAvailableRef.current && motion.playing && !document.hidden && qualityRef.current !== 'low' && decorativeMotionAllowed() && !raf) raf = requestAnimationFrame(frame);
+      else { stop(); draw(); }
+    };
+    refreshRef.current = () => {
+      resize();
+      if (qualityRef.current !== 'low' && decorativeMotionAllowed() && visible && analyserAvailableRef.current && motion.playing && !document.hidden) start();
+      else { stop(); draw(); }
     };
     const observer = new IntersectionObserver(([entry]) => {
       visible = Boolean(entry?.isIntersecting); window.dispatchEvent(new CustomEvent('aak-inline-visualizer-state', { detail: visible }));
@@ -98,11 +105,16 @@ function PlayerVisualizer({ analyserAvailable = true }: { analyserAvailable?: bo
     observer.observe(canvas);
     const resizeObserver = new ResizeObserver(resize); resizeObserver.observe(canvas);
     const activity = () => start(); const visibility = () => document.hidden ? stop() : start();
+    const performancePreference = () => refreshRef.current?.();
     const theme = new MutationObserver(draw); theme.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme', 'style'] });
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
     window.addEventListener('aak-audio-activity', activity); document.addEventListener('visibilitychange', visibility);
+    window.addEventListener(PERFORMANCE_MODE_EVENT, performancePreference); reducedMotion.addEventListener('change', performancePreference);
     resize();
-    return () => { stop(); observer.disconnect(); resizeObserver.disconnect(); theme.disconnect(); window.removeEventListener('aak-audio-activity', activity); document.removeEventListener('visibilitychange', visibility); window.dispatchEvent(new CustomEvent('aak-inline-visualizer-state', { detail: false })); };
+    return () => { stop(); refreshRef.current = null; observer.disconnect(); resizeObserver.disconnect(); theme.disconnect(); window.removeEventListener('aak-audio-activity', activity); document.removeEventListener('visibilitychange', visibility); window.removeEventListener(PERFORMANCE_MODE_EVENT, performancePreference); reducedMotion.removeEventListener('change', performancePreference); window.dispatchEvent(new CustomEvent('aak-inline-visualizer-state', { detail: false })); };
   }, []);
+
+  useEffect(() => { refreshRef.current?.(); }, [style, quality, analyserAvailable]);
 
   return <div className="relative h-20 min-w-0 overflow-hidden rounded-xl border border-bone/10 bg-void/25" data-aak-player-visualizer>
     <canvas ref={canvasRef} role="img" aria-label={analyserAvailable ? `${style} audio visualizer${motion.playing ? ' active' : ' idle'}` : `${style} visualizer, audio analysis unavailable for this source`} className="h-full w-full" />
